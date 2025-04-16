@@ -53,6 +53,9 @@ class Trainer:
         self.outputs_dir = outputs_dir
         self.early_stopping = early_stopping
 
+
+
+
     def setup_data_loaders(self, dataset):
         self.dataset = dataset
         self.train_dataloader = dataset.get_train_dataloader()
@@ -61,6 +64,11 @@ class Trainer:
         self.num_val_batches = (
             len(self.val_dataloader) if self.val_dataloader is not None else 0
         )
+        
+    def prepare_batch(self, batch):
+        if self.run_on_gpu:
+            batch = (tens.to(self.gpu) for tens in batch)
+        else: return batch
 
     def prepare_model(self, model, state_dict=None):
         if state_dict:
@@ -135,21 +143,34 @@ class Trainer:
 
         epoch_start_time = time.time()
         epoch_train_loss = misc_utils.AverageMeter()
-        epoch_train_ap = misc_utils.AverageMeter()
+        epoch_train_acc = misc_utils.AverageMeter()
 
-        for i, (input_batch, target_batch) in tqdm(
+        for i, batch in tqdm(
             enumerate(self.train_dataloader),
             total=self.num_train_batches,
             desc="Processing Training Epoch {}".format(self.epoch + 1),
         ):
-            ...
+            input_batch, target_batch = self.prepare_batch(batch)
             
+            self.optim.zero_grad()
             
+            loss, metric = self.model.training_step(input_batch, target_batch, self.use_amp)
+            
+            if self.use_amp:
+                self.grad_scaler.scale(loss).backward()
+                self.grad_scaler.step(self.optim)
+                self.grad_scaler.update()
+            else:
+                loss.backward()
+                self.optim.step()
+                
+            epoch_train_loss.update(loss.item())
+            epoch_train_acc.update(metric.item())
             
         print( 
             f"Epoch {self.epoch + 1}/{self.max_epochs}, "
             f"Training Loss: {epoch_train_loss.avg}, "
-            f"Average Precision: {epoch_train_ap.avg}, "
+            f"Average Acc: {epoch_train_acc.avg}, "
             f"Time taken: {int((time.time() - epoch_start_time)//60)}:"
             f"{int((time.time() - epoch_start_time)%60)} minutes"
         )

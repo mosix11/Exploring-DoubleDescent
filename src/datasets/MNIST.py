@@ -9,7 +9,6 @@ from pathlib import Path
 
 
 class MNIST:
-
     def __init__(
         self,
         data_dir: Path = Path("./data").absolute(),
@@ -18,12 +17,11 @@ class MNIST:
         num_workers: int = 2,
         valset_ratio: float = 0.05,
         seed: int = 11,
+        flatten: bool = False,  # Add the new flatten argument
     ) -> None:
-
         super().__init__()
 
-        if not data_dir.exists():
-            raise RuntimeError("The data directory does not exist!")
+        data_dir.mkdir(exist_ok=True, parents=True)
         dataset_dir = data_dir.joinpath(Path("MNIST"))
         if not dataset_dir.exists():
             dataset_dir.mkdir()
@@ -35,6 +33,7 @@ class MNIST:
         self.trainset_ration = 1 - valset_ratio
         self.valset_ratio = valset_ratio
         self.seed = seed
+        self.flatten = flatten  # Store the flatten argument
 
         transformations = [
             transforms.Resize(img_size),
@@ -44,6 +43,9 @@ class MNIST:
             ),  # Scale to [0.0, 1.0] and set dtype
             transforms.Normalize((0.1307,), (0.3081,)),  # Values Specific to MNIST
         ]
+        if self.flatten:
+            transformations.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
+
         self.transformations = transforms.Compose(transformations)
 
         self._init_loaders()
