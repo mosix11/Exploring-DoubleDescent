@@ -32,6 +32,8 @@ class Trainer:
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
+        log_tensorboard: bool = False,
+        log_name: str = False,
     ):
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
@@ -53,7 +55,13 @@ class Trainer:
         self.outputs_dir = outputs_dir
         self.early_stopping = early_stopping
 
+        self.log_tensorboard = log_tensorboard
 
+        if self.log_tensorboard:
+            if log_name:
+                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/').joinpath(log_name))
+            else:
+                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
 
 
     def setup_data_loaders(self, dataset):
@@ -69,7 +77,8 @@ class Trainer:
         
     def prepare_batch(self, batch):
         if self.run_on_gpu:
-            batch = (tens.to(self.gpu) for tens in batch)
+            batch = [tens.to(self.gpu) for tens in batch]
+            return batch
         else: return batch
 
     def prepare_model(self, model, state_dict=None):
@@ -79,7 +88,7 @@ class Trainer:
             model.to(self.gpu)
         self.model = model
 
-    def configure_optimizers(self, optim_state_dict=None):
+    def configure_optimizers(self, optim_state_dict=None, last_epoch=-1):
         if self.optimizer_cfg['type'] == "adamw":
             optim = AdamW(
                 params=self.model.parameters(),
@@ -109,7 +118,8 @@ class Trainer:
                 self.lr_scheduler = MultiStepLR(
                     optim,
                     milestones=self.lr_schedule_cfg['milestones'],
-                    gamma=self.lr_schedule_cfg['gamma']
+                    gamma=self.lr_schedule_cfg['gamma'],
+                    last_epoch=last_epoch
                 )
         # if self.lr_schedule_strategy == 'cos':
         #     self.lr_scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-7)
@@ -146,15 +156,24 @@ class Trainer:
         self.grad_scaler = GradScaler("cuda", enabled=self.use_amp)
 
         self.early_stop = False
-        for self.epoch in range(self.epoch, self.max_epochs):
-            if self.early_stop:
+        pbar = tqdm(range(self.epoch, self.max_epochs), total=self.max_epochs)
+        for self.epoch in pbar:
+            pbar.set_description(f"Processing Training Epoch {self.epoch + 1}/{self.max_epochs}")
+            if self.early_stopping and self.early_stop:
                 break
-            self.fit_epoch()
+            train_loss, train_acc = self.fit_epoch()
 
-        test_loss, test_metric = self.evaluate()
-        return test_loss, test_metric
-        # if self.write_sum:
-        #     self.writer.flush()
+        test_loss, test_acc = self.evaluate()
+        if self.log_tensorboard:
+            self.writer.flush()
+        results = {
+            'train_loss': train_loss,
+            'train_acc': train_acc,
+            'test_loss': test_loss,
+            'test_acc': test_acc
+        }
+        return results
+
 
     def fit_epoch(self):
 
@@ -165,11 +184,12 @@ class Trainer:
         epoch_train_loss = misc_utils.AverageMeter()
         epoch_train_acc = misc_utils.AverageMeter()
 
-        for i, batch in tqdm(
-            enumerate(self.train_dataloader),
-            total=self.num_train_batches,
-            desc="Processing Training Epoch {}".format(self.epoch + 1),
-        ):
+        # for i, batch in tqdm(
+        #     enumerate(self.train_dataloader),
+        #     total=self.num_train_batches,
+        #     desc="Processing Training Epoch {}".format(self.epoch + 1),
+        # ):
+        for i, batch in enumerate(self.train_dataloader):
             input_batch, target_batch = self.prepare_batch(batch)
             
             self.optim.zero_grad()
@@ -187,24 +207,37 @@ class Trainer:
             epoch_train_loss.update(loss.item(), n=input_batch.shape[0])
             epoch_train_acc.update(metric, input_batch.shape[0])
             
-        print( 
-            f"Epoch {self.epoch + 1}/{self.max_epochs}, "
-            f"Training Loss: {epoch_train_loss.avg}, "
-            f"Average Acc: {epoch_train_acc.avg}, "
-            f"Time taken: {int((time.time() - epoch_start_time)//60)}:"
-            f"{int((time.time() - epoch_start_time)%60)} minutes"
-        )
+        if self.lr_scheduler:
+            self.lr_scheduler.step()
+        # print( 
+        #     f"Epoch {self.epoch + 1}/{self.max_epochs}, "
+        #     f"Training Loss: {epoch_train_loss.avg}, "
+        #     f"Average Acc: {epoch_train_acc.avg}, "
+        #     f"Time taken: {int((time.time() - epoch_start_time)//60)}:"
+        #     f"{int((time.time() - epoch_start_time)%60)} minutes"
+        # )
+
+        if self.log_tensorboard:
+            self.writer.add_scalar('Train/Loss', epoch_train_loss.avg, self.epoch)
+            self.writer.add_scalar('Train/ACC', epoch_train_acc.avg, self.epoch)
+            self.writer.add_scalar('Train/LR', self.lr_scheduler.get_last_lr()[0], self.epoch)
+            
+        if epoch_train_loss.avg == 0.0 or epoch_train_acc.avg == 1.0:
+            if self.early_stopping: self.early_stop = True
+            
+        return epoch_train_loss.avg, epoch_train_acc.avg
 
     def evaluate(self):
         self.model.eval()
         epoch_test_loss = misc_utils.AverageMeter()
         epoch_test_acc = misc_utils.AverageMeter()
         
-        for i, batch in tqdm(
-            enumerate(self.test_dataloader),
-            total=self.num_test_batches,
-            desc="Processing Training Epoch {}".format(self.epoch + 1),
-        ):
+        # for i, batch in tqdm(
+        #     enumerate(self.test_dataloader),
+        #     total=self.num_test_batches,
+        #     desc="Processing Training Epoch {}".format(self.epoch + 1),
+        # ):
+        for i, batch in enumerate(self.test_dataloader):
             input_batch, target_batch = self.prepare_batch(batch)
             loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
             epoch_test_loss.update(loss.item(), n=input_batch.shape[0])
