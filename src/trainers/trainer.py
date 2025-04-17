@@ -3,6 +3,7 @@ from torch.optim import AdamW, Adam, SGD
 from torch.amp import GradScaler
 from torch.amp import autocast
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import MultiStepLR
 
 import os
 import socket
@@ -21,11 +22,12 @@ class Trainer:
     def __init__(
         self,
         max_epochs: int = 400,
-        optimizer_type: str = "adamw",
-        lr: float = 1e-4,
-        # optim_beta1: float = 0.9,
-        # optim_beta2: float = 0.95,
-        lr_schedule_strategy: str = "plat",
+        optimizer_cfg: dict = {
+                'type': 'adamw',
+                'lr': 1e-4,
+                'betas': (0.9, 0.999)
+            },
+        lr_schedule_cfg: dict = None,
         outputs_dir: Path = Path("./outputs"),
         early_stopping: bool = False,
         run_on_gpu: bool = True,
@@ -46,10 +48,8 @@ class Trainer:
         self.outputs_dir = outputs_dir
 
         self.max_epochs = max_epochs
-        self.optimizer_type = optimizer_type
-        self.lr = lr
-        # self.optim_betas = (optim_beta1, optim_beta2)
-        self.lr_schedule_strategy = lr_schedule_strategy
+        self.optimizer_cfg = optimizer_cfg
+        self.lr_schedule_cfg = lr_schedule_cfg
         self.outputs_dir = outputs_dir
         self.early_stopping = early_stopping
 
@@ -60,10 +60,12 @@ class Trainer:
         self.dataset = dataset
         self.train_dataloader = dataset.get_train_dataloader()
         self.val_dataloader = dataset.get_val_dataloader()
+        self.test_dataloader = dataset.get_test_dataloader()
         self.num_train_batches = len(self.train_dataloader)
         self.num_val_batches = (
             len(self.val_dataloader) if self.val_dataloader is not None else 0
         )
+        self.num_test_batches = len(self.test_dataloader)
         
     def prepare_batch(self, batch):
         if self.run_on_gpu:
@@ -77,23 +79,38 @@ class Trainer:
             model.to(self.gpu)
         self.model = model
 
-    def configure_optimizers(self, optim_state_dict=None, last_epoch=-1):
-        if self.optimizer_type == "adamw":
+    def configure_optimizers(self, optim_state_dict=None):
+        if self.optimizer_cfg['type'] == "adamw":
             optim = AdamW(
-                params=self.model.parameters(), lr=self.lr, betas=self.optim_betas
+                params=self.model.parameters(),
+                lr=self.optimizer_cfg['lr'],
+                betas=self.optimizer_cfg['betas']
             )
 
-        elif self.optimizer_type == "adam":
+        elif self.optimizer_cfg['type'] == "adam":
             optim = Adam(
-                params=self.model.parameters(), lr=self.lr, betas=self.optim_betas
+                params=self.model.parameters(),
+                lr=self.optimizer_cfg['lr'],
+                betas=self.optimizer_cfg['betas']
             )
-        elif self.optimizer_type == "sgd":
-            optim = SGD(params=self.model.parameters(), lr=self.lr)
+        elif self.optimizer_cfg['type'] == "sgd":
+            optim = SGD(
+                params=self.model.parameters(),
+                lr=self.optimizer_cfg['lr'],
+                momentum=self.optimizer_cfg['momentum']
+            )
         else:
             raise RuntimeError("Invalide optimizer type")
         if optim_state_dict:
             optim.load_state_dict(optim_state_dict)
-
+        
+        if self.lr_schedule_cfg:
+            if self.lr_schedule_cfg['type'] == 'step_lr':
+                self.lr_scheduler = MultiStepLR(
+                    optim,
+                    milestones=self.lr_schedule_cfg['milestones'],
+                    gamma=self.lr_schedule_cfg['gamma']
+                )
         # if self.lr_schedule_strategy == 'cos':
         #     self.lr_scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-7)
         # elif self.lr_schedule_strategy == 'plat':
@@ -109,17 +126,18 @@ class Trainer:
         self.setup_data_loaders(dataset)
 
         if resume:
-            ckp_path = self.checkpoints_dir.joinpath("model_ckp.pt")
-            if not ckp_path.exists():
-                raise RuntimeError(
-                    "There is no checkpoint saved! Set the `resume` flag to False."
-                )
-            checkpoint = torch.load(ckp_path)
-            self.prepare_model(model, checkpoint["model_state"])
-            self.configure_optimizers(
-                checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
-            )
-            self.epoch = checkpoint["epoch"]
+            ...
+            # ckp_path = self.checkpoints_dir.joinpath("model_ckp.pt")
+            # if not ckp_path.exists():
+            #     raise RuntimeError(
+            #         "There is no checkpoint saved! Set the `resume` flag to False."
+            #     )
+            # checkpoint = torch.load(ckp_path)
+            # self.prepare_model(model, checkpoint["model_state"])
+            # self.configure_optimizers(
+            #     checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
+            # )
+            # self.epoch = checkpoint["epoch"]
         else:
             self.prepare_model(model)
             self.configure_optimizers()
@@ -133,6 +151,8 @@ class Trainer:
                 break
             self.fit_epoch()
 
+        test_loss, test_metric = self.evaluate()
+        return test_loss, test_metric
         # if self.write_sum:
         #     self.writer.flush()
 
@@ -164,8 +184,8 @@ class Trainer:
                 loss.backward()
                 self.optim.step()
                 
-            epoch_train_loss.update(loss.item())
-            epoch_train_acc.update(metric.item())
+            epoch_train_loss.update(loss.item(), n=input_batch.shape[0])
+            epoch_train_acc.update(metric, input_batch.shape[0])
             
         print( 
             f"Epoch {self.epoch + 1}/{self.max_epochs}, "
@@ -174,3 +194,20 @@ class Trainer:
             f"Time taken: {int((time.time() - epoch_start_time)//60)}:"
             f"{int((time.time() - epoch_start_time)%60)} minutes"
         )
+
+    def evaluate(self):
+        self.model.eval()
+        epoch_test_loss = misc_utils.AverageMeter()
+        epoch_test_acc = misc_utils.AverageMeter()
+        
+        for i, batch in tqdm(
+            enumerate(self.test_dataloader),
+            total=self.num_test_batches,
+            desc="Processing Training Epoch {}".format(self.epoch + 1),
+        ):
+            input_batch, target_batch = self.prepare_batch(batch)
+            loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+            epoch_test_loss.update(loss.item(), n=input_batch.shape[0])
+            epoch_test_acc.update(metric, input_batch.shape[0])
+            
+        return epoch_test_loss.avg, epoch_test_acc.avg

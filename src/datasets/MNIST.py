@@ -2,7 +2,7 @@ import torch
 from torchvision import datasets
 import torchvision.transforms.v2 as transforms
 from torch.utils.data import Dataset, DataLoader, random_split
-
+from torch.utils.data import Subset
 import os
 import sys
 from pathlib import Path
@@ -14,10 +14,12 @@ class MNIST:
         data_dir: Path = Path("./data").absolute(),
         batch_size: int = 256,
         img_size: tuple = (28, 28),
+        subsample_size: int = -1,
         num_workers: int = 2,
         valset_ratio: float = 0.05,
-        seed: int = 11,
+        normalize_imgs: bool = False,
         flatten: bool = False,  # Add the new flatten argument
+        seed: int = 11,
     ) -> None:
         super().__init__()
 
@@ -30,19 +32,23 @@ class MNIST:
         self.batch_size = batch_size
         self.img_size = img_size
         self.num_workers = num_workers
+        self.subsample_size = subsample_size
         self.trainset_ration = 1 - valset_ratio
         self.valset_ratio = valset_ratio
         self.seed = seed
+        self.normalize_imgs = normalize_imgs
         self.flatten = flatten  # Store the flatten argument
 
         transformations = [
-            transforms.Resize(img_size),
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
             transforms.ToDtype(
                 torch.float32, scale=True
             ),  # Scale to [0.0, 1.0] and set dtype
-            transforms.Normalize((0.1307,), (0.3081,)),  # Values Specific to MNIST
         ]
+        if self.img_size != (28, 28):
+            transformations.insert(0, transforms.Resize(img_size))
+        if self.normalize_imgs:
+            transformations.append(transforms.Normalize((0.1307,), (0.3081,))) # Values Specific to MNIST
         if self.flatten:
             transformations.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
 
@@ -72,6 +78,11 @@ class MNIST:
             transform=self.transformations,
             download=True,
         )
+        
+        # Subsample the dataset uniformly
+        if self.subsample_size != -1:
+            indices = torch.randperm(len(train_dataset))[:self.subsample_size]
+            train_dataset = Subset(train_dataset, indices.tolist())
 
         if self.seed:
             generator = torch.Generator().manual_seed(self.seed)
@@ -102,11 +113,13 @@ class MNIST:
         self.test_loader = self._build_dataloader(testset)
 
     def _build_dataloader(self, dataset):
+        # TODO if want to set the seed of shuffling algorithm, use torch.Generator
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
+            
         )
         return dataloader
