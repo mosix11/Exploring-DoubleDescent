@@ -18,8 +18,8 @@ class MNIST:
         num_workers: int = 2,
         valset_ratio: float = 0.05,
         normalize_imgs: bool = False,
-        flatten: bool = False,  # Add the new flatten argument
-        seed: int = 11,
+        flatten: bool = False,  # Whether to flatten images to vectors
+        seed: int = None,
     ) -> None:
         super().__init__()
 
@@ -37,7 +37,7 @@ class MNIST:
         self.valset_ratio = valset_ratio
         self.seed = seed
         self.normalize_imgs = normalize_imgs
-        self.flatten = flatten  # Store the flatten argument
+        self.flatten = flatten  # Whether to flatten images to vectors
 
         transformations = [
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
@@ -83,28 +83,20 @@ class MNIST:
         if self.subsample_size != -1:
             indices = torch.randperm(len(train_dataset))[:self.subsample_size]
             train_dataset = Subset(train_dataset, indices.tolist())
-
+        gen = None
         if self.seed:
-            generator = torch.Generator().manual_seed(self.seed)
-            if self.valset_ratio == 0.0:
-                trainset = train_dataset
-                testset = test_dataset
-            else:
-                trainset, valset = random_split(
-                    train_dataset,
-                    [self.trainset_ration, self.valset_ratio],
-                    generator=generator,
-                )
-                testset = test_dataset
+            gen = torch.Generator().manual_seed(self.seed)
+
+        if self.valset_ratio == 0.0:
+            trainset = train_dataset
+            testset = test_dataset
         else:
-            if self.valset_ratio == 0.0:
-                trainset = train_dataset
-                testset = test_dataset
-            else:
-                trainset, valset = random_split(
-                    train_dataset, [self.trainset_ration, self.valset_ratio]
-                )
-                testset = test_dataset
+            trainset, valset = random_split(
+                train_dataset,
+                [self.trainset_ration, self.valset_ratio],
+                generator=gen,
+            )
+            testset = test_dataset
 
         self.train_loader = self._build_dataloader(trainset)
         self.val_loader = (
@@ -113,13 +105,15 @@ class MNIST:
         self.test_loader = self._build_dataloader(testset)
 
     def _build_dataloader(self, dataset):
-        # TODO if want to set the seed of shuffling algorithm, use torch.Generator
+        gen = None
+        if self.seed:
+            gen = torch.Generator().manual_seed(self.seed)
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
-            
+            generator=gen
         )
         return dataloader

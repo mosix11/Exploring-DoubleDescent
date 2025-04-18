@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.amp import autocast
+
 
 class Flatten(nn.Module):
     def forward(self, x): return x.view(x.size(0), x.size(1))
@@ -11,7 +14,10 @@ class FiveCNN(nn.Module):
     def __init__(
         self,
         num_channels=64,
-        num_classes=10
+        num_classes=10,
+        weight_init=None,
+        loss_fn=None,
+        metric=None,
     ):
         super().__init__()
         
@@ -49,9 +55,41 @@ class FiveCNN(nn.Module):
             nn.Linear(num_channels*8, num_classes, bias=True)
         )
 
-        
+        if weight_init:
+            self.apply(weight_init)
+            
+            
+        if not loss_fn:
+            raise RuntimeError('The loss function must be specified!')
+        self.loss_fn = loss_fn
+        if metric:
+            self.metric = metric
     
+    
+    def training_step(self, x, y, use_amp=False):
+        with autocast('cuda', enabled=use_amp):
+            preds = self(x)
+            loss = self.loss_fn(preds, y)
+        if self.metric:
+            met = self.metric(preds, y)
+            return loss, met
+        else: return loss, None
+        
+    def validation_step(self, x, y, use_amp=False):
+        with torch.no_grad():
+            with autocast('cuda', enabled=use_amp):
+                preds = self(x)
+                loss = self.loss_fn(preds, y)
+        if self.metric:
+            met = self.metric(y, preds)
+            return loss, met
+        else: return loss, None
+    
+    
+    def predict(self, x):
+        with torch.no_grad():
+            preds = self(x)
+        return preds
     
     def forward(self, x):
-        
         return self.net(x)
