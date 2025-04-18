@@ -63,7 +63,7 @@ class FC1(nn.Module):
             self.out.bias.data.copy_(old_state['out.bias'])
 
     def training_step(self, x, y, use_amp=False):
-        y = F.one_hot(y, num_classes=10).float()
+        y = F.one_hot(y, num_classes=self.output_dim).float()
         with autocast('cuda', enabled=use_amp):
             preds = self(x)
             loss = self.loss_fn(preds, y)
@@ -73,7 +73,7 @@ class FC1(nn.Module):
         else: return loss, None
         
     def validation_step(self, x, y, use_amp=False):
-        y = F.one_hot(y, num_classes=10).float()
+        y = F.one_hot(y, num_classes=self.output_dim).float()
         with torch.no_grad():
             with autocast('cuda', enabled=use_amp):
                 preds = self(x)

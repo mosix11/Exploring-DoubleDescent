@@ -35,9 +35,14 @@ class MNIST:
         self.subsample_size = subsample_size
         self.trainset_ration = 1 - valset_ratio
         self.valset_ratio = valset_ratio
-        self.seed = seed
         self.normalize_imgs = normalize_imgs
         self.flatten = flatten  # Whether to flatten images to vectors
+        
+        self.generator = None
+        if seed:
+            self.seed = seed
+            self.generator = torch.Generator()
+            self.generator.manual_seed(self.seed)
 
         transformations = [
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
@@ -81,23 +86,21 @@ class MNIST:
         
         # Subsample the dataset uniformly
         if self.subsample_size != -1:
-            indices = torch.randperm(len(train_dataset))[:self.subsample_size]
+            indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size]
             train_dataset = Subset(train_dataset, indices.tolist())
-        gen = None
-        if self.seed:
-            gen = torch.Generator().manual_seed(self.seed)
 
         if self.valset_ratio == 0.0:
             trainset = train_dataset
+            valset = None
             testset = test_dataset
         else:
             trainset, valset = random_split(
                 train_dataset,
                 [self.trainset_ration, self.valset_ratio],
-                generator=gen,
+                generator=self.generator,
             )
             testset = test_dataset
-
+   
         self.train_loader = self._build_dataloader(trainset)
         self.val_loader = (
             self._build_dataloader(valset) if self.valset_ratio > 0 else None
@@ -105,15 +108,12 @@ class MNIST:
         self.test_loader = self._build_dataloader(testset)
 
     def _build_dataloader(self, dataset):
-        gen = None
-        if self.seed:
-            gen = torch.Generator().manual_seed(self.seed)
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
-            generator=gen
+            generator=self.generator
         )
         return dataloader

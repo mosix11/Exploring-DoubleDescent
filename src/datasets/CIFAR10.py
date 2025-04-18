@@ -11,6 +11,22 @@ from pathlib import Path
 
 
 class CIFAR10:
+    
+    class _LabelRemapper(Dataset):
+        """
+        Wraps any dataset whose __getitem__ returns (x, y)
+        and remaps y via a provided dict mapping_orig2new.
+        """
+        def __init__(self, base_dataset: Dataset, mapping_orig2new: dict):
+            self.base = base_dataset
+            self.map = mapping_orig2new
+
+        def __len__(self):
+            return len(self.base)
+
+        def __getitem__(self, idx):
+            x, y = self.base[idx]
+            return x, self.map[y]
 
     def __init__(
         self,
@@ -40,14 +56,18 @@ class CIFAR10:
         self.img_size = img_size
         self.num_workers = num_workers
         self.subsample_size = subsample_size
-        if class_subset != None and len(class_subset) >= 1:
-            self.class_subset = class_subset
+        self.class_subset = class_subset
         self.grayscale = grayscale
         self.normalize_imgs = normalize_imgs
         self.flatten = flatten  # Store the flatten argument
         self.trainset_ration = 1 - valset_ratio
         self.valset_ratio = valset_ratio
-        self.seed = seed
+        
+        self.generator = None
+        if seed:
+            self.seed = seed
+            self.generator = torch.Generator()
+            self.generator.manual_seed(self.seed)
 
         transformations = [
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
@@ -101,24 +121,44 @@ class CIFAR10:
             download=True,
         )
         
+        # Filter samples based on the provided classes
+        if self.class_subset != None and len(self.class_subset) >= 1:
+            train_idxs = [
+                i for i, lbl in enumerate(train_dataset.targets)
+                if lbl in self.class_subset
+            ]
+            train_dataset = Subset(train_dataset, train_idxs)
+
+            test_idxs = [
+                i for i, lbl in enumerate(test_dataset.targets)
+                if lbl in self.class_subset
+            ]
+            test_dataset = Subset(test_dataset, test_idxs)
+        
         # Subsample the dataset uniformly
         if self.subsample_size != -1:
-            indices = torch.randperm(len(train_dataset))[:self.subsample_size]
+            indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size]
             train_dataset = Subset(train_dataset, indices.tolist())
-        gen = None
-        if self.seed:
-            gen = torch.Generator().manual_seed(self.seed)
 
         if self.valset_ratio == 0.0:
             trainset = train_dataset
+            valset = None
             testset = test_dataset
         else:
             trainset, valset = random_split(
                 train_dataset,
                 [self.trainset_ration, self.valset_ratio],
-                generator=gen,
+                generator=self.generator,
             )
             testset = test_dataset
+            
+            
+        if self.class_subset != None and len(self.class_subset) >= 1:
+            mapping = {orig: new for new, orig in enumerate(self.class_subset)}
+            trainset = self._LabelRemapper(trainset, mapping)
+            if valset is not None:
+                valset = self._LabelRemapper(valset, mapping)
+            testset  = self._LabelRemapper(testset,  mapping)
    
         self.train_loader = self._build_dataloader(trainset)
         self.val_loader = (
@@ -127,15 +167,12 @@ class CIFAR10:
         self.test_loader = self._build_dataloader(testset)
 
     def _build_dataloader(self, dataset):
-        gen = None
-        if self.seed:
-            gen = torch.Generator().manual_seed(self.seed)
         dataloader = DataLoader(
             dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
-            generator=gen
+            generator=self.generator
         )
         return dataloader

@@ -33,7 +33,7 @@ class Trainer:
         run_on_gpu: bool = True,
         use_amp: bool = True,
         log_tensorboard: bool = False,
-        log_name: str = False,
+        log_dir: Path = False,
     ):
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
@@ -58,10 +58,10 @@ class Trainer:
         self.log_tensorboard = log_tensorboard
 
         if self.log_tensorboard:
-            if log_name:
-                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/').joinpath(log_name))
+            if log_dir:
+                self.writer = SummaryWriter(str(log_dir.absolute()))
             else:
-                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
+                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/general').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
 
 
     def setup_data_loaders(self, dataset):
