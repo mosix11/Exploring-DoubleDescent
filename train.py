@@ -139,6 +139,10 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         96,
         128,
         256,
+        384,
+        512,
+        1024,
+        2048,
     ]
     interpolation_ths = 30
 

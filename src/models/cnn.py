@@ -10,13 +10,12 @@ class Flatten(nn.Module):
 
 class FiveCNN(nn.Module):
     
-    
     def __init__(
         self,
-        num_channels=64,
-        num_classes=10,
+        num_channels:int = 64,
+        num_classes: int = 10,
         weight_init=None,
-        loss_fn=None,
+        loss_fn=nn.CrossEntropyLoss,
         metric=None,
     ):
         super().__init__()
