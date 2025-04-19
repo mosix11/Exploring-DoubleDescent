@@ -35,6 +35,7 @@ class CIFAR10:
         img_size: tuple = (32, 32),
         subsample_size: int = -1,
         class_subset: list = [],
+        label_noise: float = 0.0,
         grayscale: bool = False,
         augmentations: list = [],
         normalize_imgs: bool = False,
@@ -57,6 +58,7 @@ class CIFAR10:
         self.num_workers = num_workers
         self.subsample_size = subsample_size
         self.class_subset = class_subset
+        self.label_noise = label_noise
         self.grayscale = grayscale
         self.augmentations = augmentations
         self.normalize_imgs = normalize_imgs
@@ -82,8 +84,10 @@ class CIFAR10:
             trnsfrms.append(transforms.Grayscale(num_output_channels=1))
 
         if len(self.augmentations) > 0 and train:
-            trnsfrms.append(transforms.RandomCrop(32, padding=4))
-            trnsfrms.append(transforms.RandomHorizontalFlip())     
+            print('alllleerrt')
+            # trnsfrms.append(transforms.RandomCrop(32, padding=4))
+            # trnsfrms.append(transforms.RandomHorizontalFlip())    
+            trnsfrms.extend(self.augmentations) 
 
 
         trnsfrms.extend([
@@ -105,6 +109,34 @@ class CIFAR10:
             trnsfrms.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
 
         return transforms.Compose(trnsfrms)
+
+    def _apply_label_noise(self, dataset):
+        num_samples = len(dataset)
+        num_classes = len(self.class_subset) if self.class_subset else 10
+
+        # Generate random numbers to decide which labels to flip
+        noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
+
+        # Get the original labels
+        original_labels = torch.tensor(dataset.targets)
+
+        # Generate random incorrect labels
+        random_labels = torch.randint(0, num_classes, (num_samples,), generator=self.generator)
+
+        # Ensure the random labels are different from the original labels
+        incorrect_mask = (random_labels == original_labels)
+        while incorrect_mask.any():
+            new_random_labels = torch.randint(0, num_classes, (incorrect_mask.sum(),), generator=self.generator)
+            random_labels[incorrect_mask] = new_random_labels
+            incorrect_mask = (random_labels == original_labels)
+
+        # Apply the noise to the targets
+        noisy_labels = torch.where(noise_mask, random_labels, original_labels)
+
+        # Update the dataset targets
+        dataset.targets = noisy_labels.tolist()
+        return dataset
+
 
     def get_train_dataloader(self):
         return self.train_loader
@@ -151,15 +183,16 @@ class CIFAR10:
         if self.valset_ratio == 0.0:
             trainset = train_dataset
             valset = None
-            testset = test_dataset
         else:
             trainset, valset = random_split(
                 train_dataset,
                 [self.trainset_ration, self.valset_ratio],
                 generator=self.generator,
             )
-            testset = test_dataset
+        testset = test_dataset
             
+        if self.label_noise > 0.0:
+            train_dataset = self._apply_label_noise(train_dataset)
             
         if self.class_subset != None and len(self.class_subset) >= 1:
             mapping = {orig: new for new, orig in enumerate(self.class_subset)}

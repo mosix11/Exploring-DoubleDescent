@@ -231,6 +231,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
     max_gradient_steps = 500000
     # max_gradient_steps = 200
     param_range = [
+        # 1,
         # 2,
         # 3,
         # 4,
@@ -240,7 +241,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         # 8,
         # 9,
         10,
-        11,
+        # 11,
         # 12,
         # 13,
         # 14,
@@ -275,6 +276,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
     dataset = CIFAR10(
         batch_size=128,
         grayscale=False,
+        label_noise=0.2,
         num_workers=4,
         # subsample_size=128,
         valset_ratio=0.0,
