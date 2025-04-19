@@ -8,7 +8,7 @@ class Flatten(nn.Module):
     def forward(self, x): return x.view(x.size(0), x.size(1))
 
 
-class FiveCNN(nn.Module):
+class CNN5(nn.Module):
     
     def __init__(
         self,
@@ -80,7 +80,7 @@ class FiveCNN(nn.Module):
                 preds = self(x)
                 loss = self.loss_fn(preds, y)
         if self.metric:
-            met = self.metric(y, preds)
+            met = self.metric(preds, y)
             return loss, met
         else: return loss, None
     

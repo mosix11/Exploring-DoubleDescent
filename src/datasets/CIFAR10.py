@@ -36,6 +36,7 @@ class CIFAR10:
         subsample_size: int = -1,
         class_subset: list = [],
         grayscale: bool = False,
+        augmentations: list = [],
         normalize_imgs: bool = False,
         flatten: bool = False,  # Whether to flatten images to vectors
         valset_ratio: float = 0.05,
@@ -45,11 +46,10 @@ class CIFAR10:
 
         super().__init__()
 
-        if not data_dir.exists():
-            raise RuntimeError("The data directory does not exist!")
-        dataset_dir = data_dir.joinpath(Path("CIFAR10"))
-        if not dataset_dir.exists():
-            dataset_dir.mkdir()
+        
+        data_dir.mkdir(exist_ok=True, parents=True)
+        dataset_dir = data_dir / Path("CIFAR10")
+        dataset_dir.mkdir(exist_ok=True, parents=True)
         self.dataset_dir = dataset_dir
 
         self.batch_size = batch_size
@@ -58,6 +58,7 @@ class CIFAR10:
         self.subsample_size = subsample_size
         self.class_subset = class_subset
         self.grayscale = grayscale
+        self.augmentations = augmentations
         self.normalize_imgs = normalize_imgs
         self.flatten = flatten  # Store the flatten argument
         self.trainset_ration = 1 - valset_ratio
@@ -69,34 +70,41 @@ class CIFAR10:
             self.generator = torch.Generator()
             self.generator.manual_seed(self.seed)
 
-        transformations = [
+        self._init_loaders()
+        
+    def get_transforms(self, train=True):
+        trnsfrms = []
+
+        if self.img_size != (32, 32):
+            trnsfrms.append(transforms.Resize(self.img_size))
+
+        if self.grayscale:
+            trnsfrms.append(transforms.Grayscale(num_output_channels=1))
+
+        if len(self.augmentations) > 0 and train:
+            trnsfrms.append(transforms.RandomCrop(32, padding=4))
+            trnsfrms.append(transforms.RandomHorizontalFlip())     
+
+
+        trnsfrms.extend([
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
             transforms.ToDtype(
                 torch.float32, scale=True
             ),  # Scale to [0.0, 1.0] and set dtype
-        ]
-        
-        if self.grayscale:
-            transformations.insert(0, transforms.Grayscale(num_output_channels=1))
-        
-        if self.img_size != (32, 32):
-            transformations.insert(0, transforms.Resize(img_size))
-            
+        ])
+
         if self.normalize_imgs:
             mean, std = (
                 (0.5,), (0.5,)
                 if self.grayscale
                 else ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)) # Values Specific to CIFAR
             )
-            transformations.append(transforms.Normalize(mean, std))
+            trnsfrms.append(transforms.Normalize(mean, std))
 
-            
         if self.flatten:
-            transformations.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
+            trnsfrms.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
 
-        self.transformations = transforms.Compose(transformations)
-
-        self._init_loaders()
+        return transforms.Compose(trnsfrms)
 
     def get_train_dataloader(self):
         return self.train_loader
@@ -111,13 +119,13 @@ class CIFAR10:
         train_dataset = datasets.CIFAR10(
             root=self.dataset_dir,
             train=True,
-            transform=self.transformations,
+            transform=self.get_transforms(train=True),
             download=True,
         )
         test_dataset = datasets.CIFAR10(
             root=self.dataset_dir,
             train=False,
-            transform=self.transformations,
+            transform=self.get_transforms(train=False),
             download=True,
         )
         

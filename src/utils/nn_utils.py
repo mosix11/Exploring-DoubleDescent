@@ -7,7 +7,7 @@ import collections
 from . import misc_utils
 from torch.utils.data import Dataset
 from typing import Any
-
+import math
 
 def get_gpu_device():
     if torch.cuda.is_available():
@@ -308,6 +308,15 @@ def linear_warmup_lr(epoch, base_lr, warmup_epochs):
 
 from torch.optim.lr_scheduler import _LRScheduler
 
+
+class InverseSquareRootLR(_LRScheduler):
+    def __init__(self, optimizer, gamma0, last_epoch=-1, verbose=False):
+        self.gamma0 = gamma0
+        super().__init__(optimizer, last_epoch, verbose)
+
+    def get_lr(self):
+        return [self.gamma0 / math.sqrt(1 + self.last_epoch / 512)
+                for base_lr in self.base_lrs]
 
 class CustomWarmupLRScheduler(_LRScheduler):
     def __init__(

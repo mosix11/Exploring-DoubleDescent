@@ -25,8 +25,7 @@ class MNIST:
 
         data_dir.mkdir(exist_ok=True, parents=True)
         dataset_dir = data_dir.joinpath(Path("MNIST"))
-        if not dataset_dir.exists():
-            dataset_dir.mkdir()
+        dataset_dir.mkdir(exist_ok=True, parents=True)
         self.dataset_dir = dataset_dir
 
         self.batch_size = batch_size

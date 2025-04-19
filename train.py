@@ -1,9 +1,11 @@
+import torchmetrics.classification
 from src.datasets import MNIST, CIFAR10, FashionMNIST
-from src.models import FC1, FiveCNN
-from src.trainers import Trainer
+from src.models import FC1, CNN5
+from src.trainers import TrainerEp, TrainerGS
 import matplotlib.pyplot as plt
 from src.utils import nn_utils
 import torch
+import torchmetrics
 from functools import partial
 from pathlib import Path
 import pickle
@@ -94,7 +96,7 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             model.reuse_weights(old_state)
 
         early_stopping = False if param > interpolation_ths else True
-        trainer = Trainer(
+        trainer = TrainerEp(
             max_epochs=max_epochs,
             optimizer_cfg=optim_cgf,
             lr_schedule_cfg=lr_schedule_cfg,
@@ -200,14 +202,14 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             model.reuse_weights(old_state)
 
         early_stopping = False if param > interpolation_ths else True
-        trainer = Trainer(
+        trainer = TrainerEp(
             max_epochs=max_epochs,
             optimizer_cfg=optim_cgf,
             lr_schedule_cfg=lr_schedule_cfg,
             early_stopping=early_stopping,
             run_on_gpu=True,
             use_amp=False,
-            log_tensorboard=True,
+            log_tensorboard=False,
             log_dir=log_dir / Path(f"param{param}"),
         )
 
@@ -222,6 +224,99 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             pickle.dump(results, f)
 
 
+def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+    # 500k steps for SGD -> Each epoch with batch size 128 = 391 gradient steps -> 1279 epochs
+    # 4k epochs for Adam
+    
+    max_gradient_steps = 500000
+    # max_gradient_steps = 200
+    param_range = [
+        # 2,
+        # 3,
+        # 4,
+        # 5,
+        # 6,
+        # 7,
+        # 8,
+        # 9,
+        10,
+        11,
+        # 12,
+        # 13,
+        # 14,
+        # 15,
+        # 16,
+        # 17,
+        # 18,
+        # 19,
+        # 20,
+        # 24,
+        # 28,
+        # 32,
+        # 38,
+        # 48,
+        # 64
+    ]
+
+    # optim_cgf = {
+    #     'type': 'adamw',
+    #     'lr': 1e-4,
+    #     'betas': (0.9, 0.999)
+    # }
+    optim_cgf = {
+        "type": "sgd",
+        "lr": 1e-1,
+        "momentum": 0.0
+    }
+    lr_schedule_cfg = {
+        "type": "inv_sqr_root",
+        "L": 512,
+    }
+    dataset = CIFAR10(
+        batch_size=128,
+        grayscale=False,
+        num_workers=4,
+        # subsample_size=128,
+        valset_ratio=0.0,
+        normalize_imgs=False,
+        flatten=False,
+        seed=11,
+    )
+
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.classification.Accuracy(task='multiclass', num_classes=10)
+
+    for idx, param in enumerate(param_range):
+
+        model = CNN5(
+            num_channels=param,
+            num_classes=10,
+            loss_fn=loss_fn,
+            metric=acc_metric
+        )
+
+        early_stopping = False 
+        trainer = TrainerGS(
+            max_gradient_steps=max_gradient_steps,
+            optimizer_cfg=optim_cgf,
+            lr_schedule_cfg=lr_schedule_cfg,
+            early_stopping=early_stopping,
+            run_on_gpu=True,
+            use_amp=True,
+            log_tensorboard=True,
+            log_dir=log_dir / Path(f"param{param}"),
+        )
+
+        results = trainer.fit(model, dataset, resume=False)
+        print(
+            f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
+        )
+
+        torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_h{param}.pth"))
+        result_path = results_dir / Path(f"res_param{param}.pkl")
+        with open(result_path, "wb") as f:
+            pickle.dump(results, f)
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -230,7 +325,7 @@ if __name__ == "__main__":
         "--model",
         help="The model to use for training.",
         type=str,
-        choices=["fc1", "cnn", "resnet18"],
+        choices=["fc1", "cnn5", "resnet18"],
         required=True,
     )
     parser.add_argument(
@@ -263,3 +358,5 @@ if __name__ == "__main__":
         train_fc1_mnist(results_dir, checkpoints_dir, log_dir)
     elif args.model == "fc1" and args.dataset == "cifar10":
         train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
+    elif args.model == 'cnn5' and args.dataset == 'cifar10':
+        train_cnn5_cifar10(results_dir, checkpoints_dir, log_dir)
