@@ -1,4 +1,4 @@
-import torchmetrics.classification
+
 from src.datasets import MNIST, CIFAR10, FashionMNIST
 from src.models import FC1, CNN5
 from src.trainers import TrainerEp, TrainerGS
@@ -231,32 +231,32 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
     max_gradient_steps = 500000
     # max_gradient_steps = 200
     param_range = [
-        # 1,
-        # 2,
-        # 3,
-        # 4,
-        # 5,
-        # 6,
-        # 7,
-        # 8,
-        # 9,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
         10,
-        # 11,
-        # 12,
-        # 13,
-        # 14,
-        # 15,
-        # 16,
-        # 17,
-        # 18,
-        # 19,
-        # 20,
-        # 24,
-        # 28,
-        # 32,
-        # 38,
-        # 48,
-        # 64
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        24,
+        28,
+        32,
+        38,
+        48,
+        64
     ]
 
     # optim_cgf = {
@@ -286,7 +286,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
     )
 
     loss_fn = torch.nn.CrossEntropyLoss()
-    acc_metric = torchmetrics.classification.Accuracy(task='multiclass', num_classes=10)
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
     for idx, param in enumerate(param_range):
 
@@ -327,7 +327,7 @@ if __name__ == "__main__":
         "--model",
         help="The model to use for training.",
         type=str,
-        choices=["fc1", "cnn5", "resnet18"],
+        choices=["fc1", "cnn5", "resnet18k"],
         required=True,
     )
     parser.add_argument(

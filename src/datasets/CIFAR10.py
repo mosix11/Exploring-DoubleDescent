@@ -8,7 +8,8 @@ from torch.utils.data import Subset
 import os
 import sys
 from pathlib import Path
-
+import random
+import numpy as np
 
 class CIFAR10:
     
@@ -69,6 +70,10 @@ class CIFAR10:
         self.generator = None
         if seed:
             self.seed = seed
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
             self.generator = torch.Generator()
             self.generator.manual_seed(self.seed)
 
@@ -84,7 +89,7 @@ class CIFAR10:
             trnsfrms.append(transforms.Grayscale(num_output_channels=1))
 
         if len(self.augmentations) > 0 and train:
-            print('alllleerrt')
+            print('Augmentation active')
             # trnsfrms.append(transforms.RandomCrop(32, padding=4))
             # trnsfrms.append(transforms.RandomHorizontalFlip())    
             trnsfrms.extend(self.augmentations) 

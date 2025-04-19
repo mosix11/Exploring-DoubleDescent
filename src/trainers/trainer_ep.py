@@ -11,6 +11,8 @@ import datetime
 from pathlib import Path
 import time
 from tqdm import tqdm
+import random
+import numpy as np
 
 from typing import List, Tuple, Union
 
@@ -30,14 +32,25 @@ class TrainerEp:
             },
         lr_schedule_cfg: dict = None,
         outputs_dir: Path = Path("./outputs"),
+        validation_freq: int = None,
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
+        batch_prog: bool = False,
         log_tensorboard: bool = False,
         log_dir: Path = None,
+        seed: int = None
     ):
+        if seed:
+            self.seed = seed
+            self.seed = seed
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True) 
         torch.set_float32_matmul_precision("high")
 
         self.cpu = nn_utils.get_cpu_device()
@@ -55,7 +68,9 @@ class TrainerEp:
         self.lr_schedule_cfg = lr_schedule_cfg
         self.outputs_dir = outputs_dir
         self.early_stopping = early_stopping
+        self.validation_freq = validation_freq
 
+        self.batch_prog = batch_prog
         self.log_tensorboard = log_tensorboard
 
         if self.log_tensorboard:
@@ -64,6 +79,7 @@ class TrainerEp:
             else:
                 self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/general').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
 
+        
 
     def setup_data_loaders(self, dataset):
         self.dataset = dataset
@@ -122,6 +138,7 @@ class TrainerEp:
                     gamma=self.lr_schedule_cfg['gamma'],
                     last_epoch=last_epoch
                 )
+        else: self.lr_scheduler = None
         # if self.lr_schedule_strategy == 'cos':
         #     self.lr_scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-7)
         # elif self.lr_schedule_strategy == 'plat':
@@ -157,14 +174,28 @@ class TrainerEp:
         self.grad_scaler = GradScaler("cuda", enabled=self.use_amp)
 
         self.early_stop = False
-        pbar = tqdm(range(self.epoch, self.max_epochs), total=self.max_epochs)
-        for self.epoch in pbar:
-            pbar.set_description(f"Processing Training Epoch {self.epoch + 1}/{self.max_epochs}")
-            if self.early_stopping and self.early_stop:
-                break
-            self.fit_epoch()
+        
+        # Whether to log the progress for each batch or for each epoch
+        if self.batch_prog:
+            for self.epoch in range(self.epoch, self.max_epochs):
+                if self.early_stop: break
+                self.fit_epoch()
+        else:
+            pbar = tqdm(range(self.epoch, self.max_epochs), total=self.max_epochs)
+            for self.epoch in pbar:
+                pbar.set_description(f"Processing Training Epoch {self.epoch + 1}/{self.max_epochs}")
+                if self.early_stopping and self.early_stop:
+                    break
+                self.fit_epoch()
 
-        results = self.evaluate()
+        train_results = self.evaluate(set='train')
+        test_results = self.evaluate(set='test')
+        results = {
+            'train_loss': train_results['loss'],
+            'train_acc': train_results['acc'],
+            'test_loss': test_results['loss'],
+            'test_acc': test_results['acc']
+        }
         if self.log_tensorboard:
             self.writer.flush()
         
@@ -176,16 +207,21 @@ class TrainerEp:
         # ******** Training Part ********
         self.model.train()
 
-        epoch_start_time = time.time()
+        # epoch_start_time = time.time()
         epoch_train_loss = misc_utils.AverageMeter()
         epoch_train_acc = misc_utils.AverageMeter()
 
-        # for i, batch in tqdm(
-        #     enumerate(self.train_dataloader),
-        #     total=self.num_train_batches,
-        #     desc="Processing Training Epoch {}".format(self.epoch + 1),
-        # ):
-        for i, batch in enumerate(self.train_dataloader):
+        
+        if self.batch_prog:
+            pbar = tqdm(
+                enumerate(self.train_dataloader),
+                total=self.num_train_batches,
+                desc="Processing Training Epoch {}".format(self.epoch + 1),
+            )
+        else:
+            pbar = enumerate(self.train_dataloader)
+        
+        for i, batch in pbar:
             input_batch, target_batch = self.prepare_batch(batch)
             
             self.optim.zero_grad()
@@ -205,6 +241,9 @@ class TrainerEp:
             
         if self.lr_scheduler:
             self.lr_scheduler.step()
+            
+
+                
         # print( 
         #     f"Epoch {self.epoch + 1}/{self.max_epochs}, "
         #     f"Training Loss: {epoch_train_loss.avg}, "
@@ -216,37 +255,47 @@ class TrainerEp:
         if self.log_tensorboard:
             self.writer.add_scalar('Train/Loss', epoch_train_loss.avg, self.epoch)
             self.writer.add_scalar('Train/ACC', epoch_train_acc.avg, self.epoch)
-            self.writer.add_scalar('Train/LR', self.lr_scheduler.get_last_lr()[0], self.epoch)
+            self.writer.add_scalar('Train/LR', self.optim.param_groups[0]['lr'], self.epoch)
             
         if epoch_train_loss.avg == 0.0 or epoch_train_acc.avg == 1.0:
             if self.early_stopping: self.early_stop = True
-            
         
+        if self.validation_freq:
+            if (self.epoch+1) % self.validation_freq == 0:
+                res = self.evaluate(set='test')
+                if self.log_tensorboard:
+                    self.writer.add_scalar('Test/Loss', res['loss'], self.epoch)
+                    self.writer.add_scalar('Test/ACC', res['acc'], self.epoch)
+                
 
-    def evaluate(self):
+    def evaluate(self, set='val'):
         self.model.eval()
-        train_loss = misc_utils.AverageMeter()
-        train_acc = misc_utils.AverageMeter()
-        test_loss = misc_utils.AverageMeter()
-        test_acc = misc_utils.AverageMeter()
+        loss_met = misc_utils.AverageMeter()
+        acc_met = misc_utils.AverageMeter()
         
-        for i, batch in enumerate(self.train_dataloader):
-            input_batch, target_batch = self.prepare_batch(batch)
-            loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-            train_loss.update(loss.item(), n=input_batch.shape[0])
-            train_acc.update(metric, input_batch.shape[0])
-            
-        for i, batch in enumerate(self.test_dataloader):
-            input_batch, target_batch = self.prepare_batch(batch)
-            loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-            test_loss.update(loss.item(), n=input_batch.shape[0])
-            test_acc.update(metric, input_batch.shape[0])
+        if set=='train':
+            for i, batch in enumerate(self.train_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
+        elif set=='val':
+            for i, batch in enumerate(self.val_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
+                
+        elif set=='test':
+            for i, batch in enumerate(self.test_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
             
             
         results = {
-            'train_loss': train_loss.avg,
-            'train_acc': train_acc.avg,
-            'test_loss': test_loss.avg,
-            'test_acc': test_acc.avg
+            'loss': loss_met.avg,
+            'acc': acc_met.avg
         }
         return results

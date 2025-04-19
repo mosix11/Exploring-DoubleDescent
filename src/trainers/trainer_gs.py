@@ -11,6 +11,8 @@ import datetime
 from pathlib import Path
 import time
 from tqdm import tqdm
+import random
+import numpy as np
 
 from typing import List, Tuple, Union
 
@@ -36,9 +38,18 @@ class TrainerGS:
         use_amp: bool = True,
         log_tensorboard: bool = False,
         log_dir: Path = None,
+        seed: int = None
     ):
+        if seed:
+            self.seed = seed
+            self.seed = seed
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.enabled = True
-        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True) 
         torch.set_float32_matmul_precision("high")
 
         self.cpu = nn_utils.get_cpu_device()
@@ -164,7 +175,14 @@ class TrainerGS:
 
         self.fit_model()
 
-        results = self.evaluate()
+        train_results = self.evaluate(set='train')
+        test_results = self.evaluate(set='test')
+        results = {
+            'train_loss': train_results['loss'],
+            'train_acc': train_results['acc'],
+            'test_loss': test_results['loss'],
+            'test_acc': test_results['acc']
+        }
         if self.log_tensorboard:
             self.writer.flush()
         
@@ -216,30 +234,34 @@ class TrainerGS:
             
         
 
-    def evaluate(self):
+    def evaluate(self, set='val'):
         self.model.eval()
-        train_loss = misc_utils.AverageMeter()
-        train_acc = misc_utils.AverageMeter()
-        test_loss = misc_utils.AverageMeter()
-        test_acc = misc_utils.AverageMeter()
+        loss_met = misc_utils.AverageMeter()
+        acc_met = misc_utils.AverageMeter()
         
-        for i, batch in enumerate(self.train_dataloader):
-            input_batch, target_batch = self.prepare_batch(batch)
-            loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-            train_loss.update(loss.detach().cpu().item(), n=input_batch.shape[0])
-            train_acc.update(metric.detach().cpu().item(), input_batch.shape[0])
-            
-        for i, batch in enumerate(self.test_dataloader):
-            input_batch, target_batch = self.prepare_batch(batch)
-            loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-            test_loss.update(loss.detach().cpu().item(), n=input_batch.shape[0])
-            test_acc.update(metric.detach().cpu().item(), input_batch.shape[0])
+        if set=='train':
+            for i, batch in enumerate(self.train_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
+        elif set=='val':
+            for i, batch in enumerate(self.val_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
+                
+        elif set=='test':
+            for i, batch in enumerate(self.test_dataloader):
+                input_batch, target_batch = self.prepare_batch(batch)
+                loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
+                loss_met.update(loss.item(), n=input_batch.shape[0])
+                acc_met.update(metric, input_batch.shape[0])
             
             
         results = {
-            'train_loss': train_loss.avg,
-            'train_acc': train_acc.avg,
-            'test_loss': test_loss.avg,
-            'test_acc': test_acc.avg
+            'loss': loss_met.avg,
+            'acc': acc_met.avg
         }
         return results
