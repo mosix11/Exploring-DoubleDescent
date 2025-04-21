@@ -11,17 +11,87 @@ from functools import partial
 from pathlib import Path
 import pickle
 import argparse
+import os
 
 
 
 
+def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    
+    max_epochs = 2000
+    batch_size = 128
+    label_noise = 0.0
+    seed = 22
+    max_gradient_steps=max_epochs * (50000 // 128)
+    
+    optim_cgf = {
+        "type": "sgd",
+        "lr": 1e-1,
+        "momentum": 0.0
+    }
+    lr_schedule_cfg = {
+        "type": "inv_sqr_root",
+        "L": 512,
+    }
+    
+    augmentations = [
+        transformsv2.RandomCrop(32, padding=4),
+        transformsv2.RandomHorizontalFlip()
+    ]
 
+    dataset = CIFAR10(
+        batch_size=batch_size,
+        grayscale=False,
+        label_noise=label_noise,
+        augmentations=augmentations,
+        num_workers=8,
+        valset_ratio=0.0,
+        normalize_imgs=False,
+        flatten=False,
+        seed=seed,
+    )
+    
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
+    
+    param = 128
+    
+    model = CNN5(
+        num_channels=param,
+        num_classes=10,
+        loss_fn=loss_fn,
+        metric=acc_metric
+    )
 
+    early_stopping = False 
+    trainer = TrainerGS(
+        max_gradient_steps=max_gradient_steps,
+        optimizer_cfg=optim_cgf,
+        lr_schedule_cfg=lr_schedule_cfg,
+        early_stopping=early_stopping,
+        validation_freq=1, # Epoch
+        run_on_gpu=True,
+        use_amp=True,
+        log_tensorboard=True,
+        log_dir=log_dir / Path(f"k{param}_sgd_invsqrt_aug_0nl_full_AMP"),
+        seed=seed
+    )
 
-
-
+    results = trainer.fit(model, dataset, resume=False)
+    
+    print(
+        f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
+    )
+    
+    torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
+    result_path = results_dir / Path(f"res_k{param}.pkl")
+    with open(result_path, "wb") as f:
+        pickle.dump(results, f)
+        
 
 def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     max_epochs = 2000
     optim_cgf = {
         'type': 'adam',
@@ -45,15 +115,15 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         valset_ratio=0.0,
         normalize_imgs=False,
         flatten=False,
-        seed=11,
+        seed=22,
     )
 
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
-    param = 64
+    param = 256
     model = make_resnet18k(
-        k=64,
+        k=param,
         num_classes=10,
         loss_fn=loss_fn,
         metric=acc_metric
@@ -67,10 +137,11 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         early_stopping=early_stopping,
         validation_freq=1,
         run_on_gpu=True,
-        use_amp=False,
+        use_amp=True,
         batch_prog=False,
         log_tensorboard=True,
-        log_dir=log_dir / Path(f"ep_wise_param{param}"),
+        log_dir=log_dir / Path(f"k{param}"),
+        seed=22
     )
 
     results = trainer.fit(model, dataset, resume=False)
@@ -79,8 +150,8 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
     )
     
-    torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_ep_wise_h{param}.pth"))
-    result_path = results_dir / Path(f"ep_wise_param{param}.pkl")
+    torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
+    result_path = results_dir / Path(f"res_k{param}.pkl")
     with open(result_path, "wb") as f:
         pickle.dump(results, f)
 
@@ -117,9 +188,9 @@ if __name__ == "__main__":
     experiment_specifier = f"{args.model}_{args.dataset}"
 
     outputs_dir = Path("outputs")
-    results_dir = outputs_dir / Path(f"results/{experiment_specifier}")
-    checkpoints_dir = outputs_dir / Path(f"checkpoints/{experiment_specifier}")
-    log_dir = outputs_dir / Path(f"tensorboard/{experiment_specifier}")
+    results_dir = outputs_dir / Path(f"results/epwise/{experiment_specifier}")
+    checkpoints_dir = outputs_dir / Path(f"checkpoints/epwise/{experiment_specifier}")
+    log_dir = outputs_dir / Path(f"tensorboard/epwise/{experiment_specifier}")
     results_dir.mkdir(exist_ok=True, parents=True)
     checkpoints_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)
@@ -131,7 +202,6 @@ if __name__ == "__main__":
         ...
         # train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
-        ...
-        # train_cnn5_cifar10(results_dir, checkpoints_dir, log_dir)
+        train_cnn5_cifar10(results_dir, checkpoints_dir, log_dir)
     elif args.model == 'resnet18k' and args.dataset == 'cifar10':
         train_resnet18k_cifar10(results_dir, checkpoints_dir, log_dir)

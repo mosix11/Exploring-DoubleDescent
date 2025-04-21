@@ -104,7 +104,7 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             run_on_gpu=True,
             use_amp=False,
             log_tensorboard=True,
-            log_dir=log_dir / Path(f"param{param}"),
+            log_dir=log_dir / Path(f"h{param}"),
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -113,7 +113,7 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         )
 
         torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_h{param}.pth"))
-        result_path = results_dir / Path(f"res_param{param}.pkl")
+        result_path = results_dir / Path(f"res_h{param}.pkl")
         with open(result_path, "wb") as f:
             pickle.dump(results, f)
 
@@ -210,7 +210,7 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             run_on_gpu=True,
             use_amp=False,
             log_tensorboard=False,
-            log_dir=log_dir / Path(f"param{param}"),
+            log_dir=log_dir / Path(f"h{param}"),
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -219,7 +219,7 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         )
 
         torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_h{param}.pth"))
-        result_path = results_dir / Path(f"res_param{param}.pkl")
+        result_path = results_dir / Path(f"res_h{param}.pkl")
         with open(result_path, "wb") as f:
             pickle.dump(results, f)
 
@@ -306,7 +306,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             run_on_gpu=True,
             use_amp=True,
             log_tensorboard=True,
-            log_dir=log_dir / Path(f"param{param}"),
+            log_dir=log_dir / Path(f"k{param}"),
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -315,7 +315,7 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         )
 
         torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_h{param}.pth"))
-        result_path = results_dir / Path(f"res_param{param}.pkl")
+        result_path = results_dir / Path(f"res_k{param}.pkl")
         with open(result_path, "wb") as f:
             pickle.dump(results, f)
 
@@ -349,9 +349,9 @@ if __name__ == "__main__":
     experiment_specifier = f"{args.model}_{args.dataset}"
 
     outputs_dir = Path("outputs")
-    results_dir = outputs_dir / Path(f"results/{experiment_specifier}")
-    checkpoints_dir = outputs_dir / Path(f"checkpoints/{experiment_specifier}")
-    log_dir = outputs_dir / Path(f"tensorboard/{experiment_specifier}")
+    results_dir = outputs_dir / Path(f"results/modelwise/{experiment_specifier}")
+    checkpoints_dir = outputs_dir / Path(f"checkpoints/modelwise/{experiment_specifier}")
+    log_dir = outputs_dir / Path(f"tensorboard/modelwise/{experiment_specifier}")
     results_dir.mkdir(exist_ok=True, parents=True)
     checkpoints_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)

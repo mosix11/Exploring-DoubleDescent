@@ -33,6 +33,7 @@ class TrainerGS:
             },
         lr_schedule_cfg: dict = None,
         outputs_dir: Path = Path("./outputs"),
+        validation_freq: int = None,
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
@@ -66,6 +67,7 @@ class TrainerGS:
         self.optimizer_cfg = optimizer_cfg
         self.lr_schedule_cfg = lr_schedule_cfg
         self.outputs_dir = outputs_dir
+        self.validation_freq = validation_freq
         self.early_stopping = early_stopping
 
         self.log_tensorboard = log_tensorboard
@@ -225,12 +227,28 @@ class TrainerGS:
                 epoch_train_loss.update(loss.item(), n=input_batch.shape[0])
                 epoch_train_acc.update(metric, input_batch.shape[0])
                 
-            self.epoch += 1
+            
                 
             if self.log_tensorboard:
                 self.writer.add_scalar('Train/Loss', epoch_train_loss.avg, self.epoch)
                 self.writer.add_scalar('Train/ACC', epoch_train_acc.avg, self.epoch)
                 self.writer.add_scalar('Train/LR', self.lr_scheduler.get_last_lr()[0], self.epoch)
+            
+            if epoch_train_loss.avg == 0.0 or epoch_train_acc.avg == 1.0:
+                if self.early_stopping: self.early_stop = True
+            
+            
+            
+            if self.validation_freq:
+                if (self.epoch+1) % self.validation_freq == 0:
+                    res = self.evaluate(set='test')
+                    if self.log_tensorboard:
+                        self.writer.add_scalar('Test/Loss', res['loss'], self.epoch)
+                        self.writer.add_scalar('Test/ACC', res['acc'], self.epoch)
+                    
+            
+            self.epoch += 1
+            
             
         
 

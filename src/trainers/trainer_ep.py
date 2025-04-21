@@ -16,6 +16,7 @@ import numpy as np
 
 from typing import List, Tuple, Union
 
+from .custom_lr_schedulers import InverseSquareRootLR
 from ..utils import nn_utils, misc_utils
 
 
@@ -130,12 +131,19 @@ class TrainerEp:
         if optim_state_dict:
             optim.load_state_dict(optim_state_dict)
         
+
         if self.lr_schedule_cfg:
             if self.lr_schedule_cfg['type'] == 'step_lr':
                 self.lr_scheduler = MultiStepLR(
                     optim,
                     milestones=self.lr_schedule_cfg['milestones'],
                     gamma=self.lr_schedule_cfg['gamma'],
+                    last_epoch=last_epoch
+                )
+            elif self.lr_schedule_cfg['type'] == 'inv_sqr_root':
+                self.lr_scheduler = InverseSquareRootLR(
+                    optim,
+                    L=self.lr_schedule_cfg['L'],
                     last_epoch=last_epoch
                 )
         else: self.lr_scheduler = None
