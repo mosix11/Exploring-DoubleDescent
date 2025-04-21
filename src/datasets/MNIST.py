@@ -6,7 +6,8 @@ from torch.utils.data import Subset
 import os
 import sys
 from pathlib import Path
-
+import random
+import numpy as np
 
 class MNIST:
     def __init__(
@@ -40,6 +41,10 @@ class MNIST:
         self.generator = None
         if seed:
             self.seed = seed
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
             self.generator = torch.Generator()
             self.generator.manual_seed(self.seed)
 

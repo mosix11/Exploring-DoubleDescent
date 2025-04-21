@@ -3,7 +3,8 @@ from torch.optim import AdamW, Adam, SGD
 from torch.amp import GradScaler
 from torch.amp import autocast
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnealingLR
+from .custom_lr_schedulers import InverseSquareRootLR
 
 import os
 import socket
@@ -17,7 +18,7 @@ import numpy as np
 from typing import List, Tuple, Union
 
 from ..utils import nn_utils, misc_utils
-from .custom_lr_schedulers import InverseSquareRootLR
+
 
 
 # Trainer based on gradient steps
@@ -42,7 +43,6 @@ class TrainerGS:
         seed: int = None
     ):
         if seed:
-            self.seed = seed
             self.seed = seed
             random.seed(seed)
             np.random.seed(seed)
@@ -145,7 +145,19 @@ class TrainerGS:
                     L=self.lr_schedule_cfg['L'],
                     last_epoch=last_epoch
                 )
-                
+            elif self.lr_schedule_cfg['type'] == 'red_on_plat':
+                self.lr_scheduler = ReduceLROnPlateau(
+                    optim,
+                    mode=self.lr_schedule_cfg['mode'],
+                    factor=self.lr_schedule_cfg['factor'],
+                    patience=self.lr_schedule_cfg['patience'],
+                )
+            elif self.lr_schedule_cfg['type'] == 'cos_ann':
+                self.lr_schedule_cfg = CosineAnnealingLR(
+                    optim,
+                    T_max=self.lr_schedule_cfg['T_max'],
+                    eta_min=self.lr_schedule_cfg['eta_min']
+                )
 
         # if self.early_stopping:
         #     self.early_stopping = nn_utils.EarlyStopping(patience=8, min_delta=0.001, mode='max', verbose=False)

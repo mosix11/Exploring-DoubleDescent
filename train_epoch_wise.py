@@ -140,7 +140,7 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         use_amp=True,
         batch_prog=False,
         log_tensorboard=True,
-        log_dir=log_dir / Path(f"k{param}"),
+        log_dir=log_dir / Path(f"k{param}_adam_nosched_aug_20nl_full_AMP"),
         seed=22
     )
 
