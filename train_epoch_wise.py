@@ -20,7 +20,7 @@ import os
 def train_cnn5_cifar10(outputs_dir: Path):
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     
-    max_epochs = 100
+    max_epochs = 30
     batch_size = 128
     label_noise = 0.0
     seed = 22
@@ -32,7 +32,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
         "momentum": 0.0
     }
     lr_schedule_cfg = {
-        "type": "inv_sqr_root",
+        "type": "isqrt",
         "L": 512,
     }
     
@@ -57,25 +57,33 @@ def train_cnn5_cifar10(outputs_dir: Path):
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
     param = 128
-    
     model = CNN5(
         num_channels=param,
         num_classes=10,
         loss_fn=loss_fn,
         metric=acc_metric
     )
+    
+    experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+    experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|AMP'
+    if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
+    experiment_tags = experiment_name.split('_')
 
     early_stopping = False 
     trainer = TrainerGS(
+        outputs_dir=outputs_dir,
         max_gradient_steps=max_gradient_steps,
         optimizer_cfg=optim_cgf,
         lr_schedule_cfg=lr_schedule_cfg,
         early_stopping=early_stopping,
         validation_freq=1, # Epoch
+        save_best_model=False,
         run_on_gpu=True,
         use_amp=True,
-        log_tensorboard=True,
-        log_dir=log_dir / Path(f"k{param}_sgd_invsqrt_aug_0nl_full_AMP"),
+        log_comet=True,
+        comet_project_name='doubledescent-epochwise',
+        exp_name=experiment_name,
+        exp_tags=experiment_tags,
         seed=seed
     )
 
@@ -85,16 +93,13 @@ def train_cnn5_cifar10(outputs_dir: Path):
         f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
     )
     
-    torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
-    result_path = results_dir / Path(f"res_k{param}.pkl")
-    with open(result_path, "wb") as f:
-        pickle.dump(results, f)
         
 
 def train_resnet18k_cifar10(outputs_dir: Path):
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     max_epochs = 30
     batch_size = 128
+    label_noise = 0.2
     optim_cgf = {
         'type': 'adam',
         'lr': 1e-4,
@@ -111,7 +116,7 @@ def train_resnet18k_cifar10(outputs_dir: Path):
     dataset = CIFAR10(
         batch_size=batch_size,
         grayscale=False,
-        label_noise=0.2,
+        label_noise=label_noise,
         augmentations=augmentations,
         num_workers=8,
         valset_ratio=0.0,
@@ -134,17 +139,19 @@ def train_resnet18k_cifar10(outputs_dir: Path):
     # experiment_tags = model.get_identifier().split('_').append(dataset.get_identifier().split('_'))
     
     experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
-    experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}'
-    if lr_schedule_cfg: experiment_name += f'|sch{lr_schedule_cfg['type']}'
+    experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|AMP'
+    if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
     experiment_tags = experiment_name.split('_')
     
     early_stopping = False 
     trainer = TrainerEp(
+        outputs_dir=outputs_dir,
         max_epochs=max_epochs,
         optimizer_cfg=optim_cgf,
         lr_schedule_cfg=lr_schedule_cfg,
         early_stopping=early_stopping,
         validation_freq=1,
+        save_best_model=False,
         run_on_gpu=True,
         use_amp=True,
         batch_prog=False,
@@ -160,11 +167,6 @@ def train_resnet18k_cifar10(outputs_dir: Path):
     print(
         f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
     )
-    
-    # torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
-    # result_path = results_dir / Path(f"res_k{param}.pkl")
-    # with open(result_path, "wb") as f:
-    #     pickle.dump(results, f)
 
 
 
@@ -196,8 +198,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    experiment_specifier = f"{args.model}_{args.dataset}"
-
     outputs_dir = Path("outputs/epwise")
     outputs_dir.mkdir(exist_ok=True, parents=True)
 
@@ -207,6 +207,8 @@ if __name__ == "__main__":
     elif args.model == "fc1" and args.dataset == "cifar10":
         ...
         # train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
+    elif args.model == 'cnn5' and args.dataset == "mnist":
+        ...
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
         train_cnn5_cifar10(outputs_dir)
     elif args.model == 'resnet18' and args.dataset == 'cifar10':

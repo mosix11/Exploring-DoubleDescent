@@ -10,10 +10,15 @@ from functools import partial
 from pathlib import Path
 import pickle
 import argparse
+import os
 
 
-def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+def train_fc1_mnist(outputs_dir: Path):
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     max_epochs = 6000
+    batch_size = 256
+    label_noise = 0.0
+    seed = 11
     param_range = [
         3,
         4,
@@ -45,30 +50,34 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
 
     interpolation_ths = 50
 
-    optim_cgf = {"type": "sgd", "lr": 1e-2, "momentum": 0.95}
+    optim_cgf = {
+        "type": "sgd",
+        "lr": 1e-2,
+        "momentum": 0.95
+    }
     lr_schedule_cfg = {
-        "type": "step_lr",
+        "type": "step",
         "milestones": list(range(500, 6000, 500)),
         "gamma": 0.9,
     }
     subsample_size = 4000
     dataset = MNIST(
-        batch_size=256,
+        batch_size=batch_size,
         subsample_size=subsample_size,
         num_workers=8,
         valset_ratio=0.0,
         normalize_imgs=False,
         flatten=True,
-        seed=11,
+        seed=seed,
     )
 
     loss_fn = torch.nn.MSELoss()
-
-    def accuracy_metric(preds: torch.Tensor, targets: torch.Tensor) -> float:
-        _, predicted = preds.max(1)
-        num_samples = targets.size(0)
-        correct = predicted.eq(targets.argmax(1)).sum().item()
-        return correct / num_samples
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
+    # def accuracy_metric(preds: torch.Tensor, targets: torch.Tensor) -> float:
+    #     _, predicted = preds.max(1)
+    #     num_samples = targets.size(0)
+    #     correct = predicted.eq(targets.argmax(1)).sum().item()
+    #     return correct / num_samples
 
     for idx, param in enumerate(param_range):
 
@@ -85,8 +94,13 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             ouput_dim=10,
             weight_init=weight_init_method,
             loss_fn=loss_fn,
-            metric=accuracy_metric,
+            metric=acc_metric,
         )
+        
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+        experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|AMP'
+        if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
+        experiment_tags = experiment_name.split('_')
 
         # In underparameterized regime, we reuse weights from the last trained model.
         if idx > 0 and param <= interpolation_ths:
@@ -118,7 +132,7 @@ def train_fc1_mnist(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             pickle.dump(results, f)
 
 
-def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+def train_fc1_cifar10(outputs_dir: Path):
     max_epochs = 6000
     param_range = [
         2,
@@ -224,7 +238,7 @@ def train_fc1_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
             pickle.dump(results, f)
 
 
-def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+def train_cnn5_cifar10(outputs_dir: Path):
     # 500k steps for SGD -> Each epoch with batch size 128 = 391 gradient steps -> 1279 epochs
     # 4k epochs for Adam
     
@@ -346,19 +360,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    experiment_specifier = f"{args.model}_{args.dataset}"
-
-    outputs_dir = Path("outputs")
-    results_dir = outputs_dir / Path(f"results/modelwise/{experiment_specifier}")
-    checkpoints_dir = outputs_dir / Path(f"checkpoints/modelwise/{experiment_specifier}")
-    log_dir = outputs_dir / Path(f"tensorboard/modelwise/{experiment_specifier}")
-    results_dir.mkdir(exist_ok=True, parents=True)
-    checkpoints_dir.mkdir(exist_ok=True, parents=True)
-    log_dir.mkdir(exist_ok=True, parents=True)
+    outputs_dir = Path("outputs/modelwise")
+    outputs_dir.mkdir(exist_ok=True, parents=True)
 
     if args.model == "fc1" and args.dataset == "mnist":
-        train_fc1_mnist(results_dir, checkpoints_dir, log_dir)
+        train_fc1_mnist(outputs_dir)
     elif args.model == "fc1" and args.dataset == "cifar10":
-        train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
+        train_fc1_cifar10(outputs_dir)
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
-        train_cnn5_cifar10(results_dir, checkpoints_dir, log_dir)
+        train_cnn5_cifar10(outputs_dir)

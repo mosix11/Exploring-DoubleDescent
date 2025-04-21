@@ -36,6 +36,8 @@ class TrainerEp:
             },
         lr_schedule_cfg: dict = None,
         validation_freq: int = None,
+        save_best_model: bool = True,
+        checkpoint_freq: int = -1,
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
@@ -48,12 +50,13 @@ class TrainerEp:
     ):
         outputs_dir.mkdir(exist_ok=True)
         self.outputs_dir = outputs_dir
-        self.checkpoint_dir = outputs_dir / Path(exp_name) / Path('checkpoint')
         self.log_dir = outputs_dir / Path(exp_name) / Path('log')
+        self.log_dir.mkdir(exist_ok=True, parents=True)
+        self.checkpoint_dir = outputs_dir / Path(exp_name) / Path('checkpoint')
+        self.checkpoint_dir.mkdir(exist_ok=True, parents=True)
         
         if dotenv_path.exists():
             dotenv.load_dotenv('.env')
-            
             
         if seed:
             self.seed = seed
@@ -78,9 +81,16 @@ class TrainerEp:
         self.max_epochs = max_epochs
         self.optimizer_cfg = optimizer_cfg
         self.lr_schedule_cfg = lr_schedule_cfg
-        self.outputs_dir = outputs_dir
-        self.early_stopping = early_stopping
+
         self.validation_freq = validation_freq
+        self.checkpoint_freq = checkpoint_freq
+        self.save_best_model = save_best_model
+        
+        if save_best_model:
+            self.best_model_perf = -torch.inf
+            
+        self.early_stopping = early_stopping
+        
 
         self.batch_prog = batch_prog
         self.log_comet = log_comet
@@ -111,14 +121,13 @@ class TrainerEp:
             return batch
         else: return batch
 
-    def prepare_model(self, model, state_dict=None):
+    def prepare_model(self, state_dict=None):
         if state_dict:
-            model.load_state_dict(state_dict)
+            self.model.load_state_dict(state_dict)
         if self.run_on_gpu:
-            model.to(self.gpu)
-        self.model = model
+            self.model.to(self.gpu)
 
-    def configure_optimizers(self, optim_state_dict=None, last_epoch=-1):
+    def configure_optimizers(self, optim_state_dict=None, last_epoch=-1, last_gradient_step=-1):
         if self.optimizer_cfg['type'] == "adamw":
             optim = AdamW(
                 params=self.model.parameters(),
@@ -145,31 +154,33 @@ class TrainerEp:
         
 
         if self.lr_schedule_cfg:
-            if self.lr_schedule_cfg['type'] == 'step_lr':
+            if self.lr_schedule_cfg['type'] == 'step':
                 self.lr_scheduler = MultiStepLR(
                     optim,
                     milestones=self.lr_schedule_cfg['milestones'],
                     gamma=self.lr_schedule_cfg['gamma'],
                     last_epoch=last_epoch
                 )
-            elif self.lr_schedule_cfg['type'] == 'inv_sqr_root':
+                
+            elif self.lr_schedule_cfg['type'] == 'isqrt':
                 self.lr_scheduler = InverseSquareRootLR(
                     optim,
                     L=self.lr_schedule_cfg['L'],
-                    last_epoch=last_epoch
+                    last_epoch=last_gradient_step
                 )
-            elif self.lr_schedule_cfg['type'] == 'red_on_plat':
+            elif self.lr_schedule_cfg['type'] == 'plat':
                 self.lr_scheduler = ReduceLROnPlateau(
                     optim,
                     mode=self.lr_schedule_cfg['mode'],
                     factor=self.lr_schedule_cfg['factor'],
                     patience=self.lr_schedule_cfg['patience'],
                 )
-            elif self.lr_schedule_cfg['type'] == 'cos_ann':
+            elif self.lr_schedule_cfg['type'] == 'cosann':
                 self.lr_schedule_cfg = CosineAnnealingLR(
                     optim,
                     T_max=self.lr_schedule_cfg['T_max'],
-                    eta_min=self.lr_schedule_cfg['eta_min']
+                    eta_min=self.lr_schedule_cfg['eta_min'],
+                    last_epoch=last_epoch
                 )
         else: self.lr_scheduler = None
 
@@ -193,23 +204,16 @@ class TrainerEp:
 
     def fit(self, model, dataset, resume=False):
         self.setup_data_loaders(dataset)
-
+        self.model = model
         if resume:
             ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
             if not ckp_path.exists():
                 raise RuntimeError(
                     "There is no checkpoint saved! Set the `resume` flag to False."
                 )
-            checkpoint = torch.load(ckp_path)
-            self.prepare_model(model, checkpoint["model_state"])
-            self.configure_optimizers(
-                checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
-            )
-            self.epoch = checkpoint["epoch"]
-            if self.log_comet:
-                self.configure_logger(checkpoint["exp_key"])
+            self.load_full_checkpoint(ckp_path)
         else:
-            self.prepare_model(model)
+            self.prepare_model()
             self.configure_optimizers()
             if self.log_comet:
                 self.configure_logger()
@@ -235,20 +239,26 @@ class TrainerEp:
 
         
 
-        train_results = self.evaluate(set='train')
-        test_results = self.evaluate(set='test')
-        results = {
-            'train_loss': train_results['loss'],
-            'train_acc': train_results['acc'],
-            'test_loss': test_results['loss'],
-            'test_acc': test_results['acc']
+        final_train_results = self.evaluate(set='train')
+        final_test_results = self.evaluate(set='test')
+        final_results = {
+            'train_loss': final_train_results['loss'],
+            'train_acc': final_train_results['acc'],
+            'test_loss': final_test_results['loss'],
+            'test_acc': final_test_results['acc']
         }
         
+        if self.save_best_model:
+            ...
+        
         if self.log_comet:
-            self.comet_experiment.log_parameters(results, prefix='final')
+            self.comet_experiment.log_parameters(final_results, prefix='final')
             self.comet_experiment.end()
         
-        return results
+        final_ckp_path = self.checkpoint_dir / Path('final_ckp.pth')
+        self.save_full_checkpoint(final_ckp_path)
+        
+        return final_results
 
 
     def fit_epoch(self):
@@ -315,9 +325,18 @@ class TrainerEp:
                 res = self.evaluate(set='test')
                 statistics['Test/Loss'] = res['loss']
                 statistics['Test/ACC'] = res['acc']
+                if self.save_best_model:
+                    if self.best_model_perf < statistics['Test/ACC']:
+                        self.best_model_perf = statistics['Test/ACC']
+                        ckp_path = self.checkpoint_dir / Path('best_ckp.pth')
+                        self.save_full_checkpoint(ckp_path)
+        
+        if self.checkpoint_freq > 0 and (self.epoch+1) % self.checkpoint_freq == 0:
+            ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
+            self.save_full_checkpoint(ckp_path)
                 
         if self.log_comet:
-            self.comet_experiment.log_metrics(statistics, epoch=self.epoch)
+            self.comet_experiment.log_metrics(statistics, step=self.epoch)
 
     def evaluate(self, set='val'):
         self.model.eval()
@@ -350,3 +369,24 @@ class TrainerEp:
             'acc': acc_met.avg
         }
         return results
+    
+    
+    def save_full_checkpoint(self, path):
+        save_dict = {
+            'model_state': self.model.state_dict(),
+            'optim_state': self.optim.state_dict(),
+            'epoch': self.epoch+1,
+        }
+        if self.log_comet:
+            save_dict['exp_key'] = self.comet_experiment.get_key()
+        torch.save(save_dict, path)
+        
+    def load_full_checkpoint(self, path):
+        checkpoint = torch.load(path)
+        self.prepare_model(checkpoint["model_state"])
+        self.configure_optimizers(
+            checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
+        )
+        self.epoch = checkpoint["epoch"]
+        if self.log_comet:
+            self.configure_logger(checkpoint["exp_key"])
