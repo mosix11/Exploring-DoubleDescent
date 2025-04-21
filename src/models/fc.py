@@ -93,3 +93,6 @@ class FC1(nn.Module):
         x = F.relu(self.h1(x))
         x = self.out(x)
         return x
+    
+    def get_identifier(self):
+        return f"fc1|h{self.hidden_dim}"

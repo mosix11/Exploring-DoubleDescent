@@ -1,3 +1,4 @@
+import comet_ml
 from src.datasets import MNIST, CIFAR10, FashionMNIST
 from src.models import FC1, CNN5, PreActResNet, make_resnet18k
 from src.trainers import TrainerEp, TrainerGS
@@ -16,10 +17,10 @@ import os
 
 
 
-def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+def train_cnn5_cifar10(outputs_dir: Path):
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     
-    max_epochs = 2000
+    max_epochs = 100
     batch_size = 128
     label_noise = 0.0
     seed = 22
@@ -90,9 +91,10 @@ def train_cnn5_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
         pickle.dump(results, f)
         
 
-def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: Path):
+def train_resnet18k_cifar10(outputs_dir: Path):
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    max_epochs = 2000
+    max_epochs = 30
+    batch_size = 128
     optim_cgf = {
         'type': 'adam',
         'lr': 1e-4,
@@ -107,7 +109,7 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
     ]
     
     dataset = CIFAR10(
-        batch_size=128,
+        batch_size=batch_size,
         grayscale=False,
         label_noise=0.2,
         augmentations=augmentations,
@@ -121,13 +123,20 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
-    param = 256
+    param = 64
     model = make_resnet18k(
         k=param,
         num_classes=10,
         loss_fn=loss_fn,
         metric=acc_metric
     )
+    
+    # experiment_tags = model.get_identifier().split('_').append(dataset.get_identifier().split('_'))
+    
+    experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+    experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}'
+    if lr_schedule_cfg: experiment_name += f'|sch{lr_schedule_cfg['type']}'
+    experiment_tags = experiment_name.split('_')
     
     early_stopping = False 
     trainer = TrainerEp(
@@ -139,8 +148,10 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         run_on_gpu=True,
         use_amp=True,
         batch_prog=False,
-        log_tensorboard=True,
-        log_dir=log_dir / Path(f"k{param}_adam_nosched_aug_20nl_full_AMP"),
+        log_comet=True,
+        comet_project_name='doubledescent-epochwise',
+        exp_name=experiment_name,
+        exp_tags=experiment_tags,
         seed=22
     )
 
@@ -150,10 +161,10 @@ def train_resnet18k_cifar10(results_dir: Path, checkpoints_dir: Path, log_dir: P
         f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
     )
     
-    torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
-    result_path = results_dir / Path(f"res_k{param}.pkl")
-    with open(result_path, "wb") as f:
-        pickle.dump(results, f)
+    # torch.save(model.state_dict(), checkpoints_dir / Path(f"ckp_k{param}.pth"))
+    # result_path = results_dir / Path(f"res_k{param}.pkl")
+    # with open(result_path, "wb") as f:
+    #     pickle.dump(results, f)
 
 
 
@@ -166,7 +177,7 @@ if __name__ == "__main__":
         "--model",
         help="The model to use for training.",
         type=str,
-        choices=["fc1", "cnn5", "resnet18k"],
+        choices=["fc1", "cnn5", "resnet18"],
         required=True,
     )
     parser.add_argument(
@@ -187,13 +198,8 @@ if __name__ == "__main__":
 
     experiment_specifier = f"{args.model}_{args.dataset}"
 
-    outputs_dir = Path("outputs")
-    results_dir = outputs_dir / Path(f"results/epwise/{experiment_specifier}")
-    checkpoints_dir = outputs_dir / Path(f"checkpoints/epwise/{experiment_specifier}")
-    log_dir = outputs_dir / Path(f"tensorboard/epwise/{experiment_specifier}")
-    results_dir.mkdir(exist_ok=True, parents=True)
-    checkpoints_dir.mkdir(exist_ok=True, parents=True)
-    log_dir.mkdir(exist_ok=True, parents=True)
+    outputs_dir = Path("outputs/epwise")
+    outputs_dir.mkdir(exist_ok=True, parents=True)
 
     if args.model == "fc1" and args.dataset == "mnist":
         ...
@@ -202,6 +208,6 @@ if __name__ == "__main__":
         ...
         # train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
-        train_cnn5_cifar10(results_dir, checkpoints_dir, log_dir)
-    elif args.model == 'resnet18k' and args.dataset == 'cifar10':
-        train_resnet18k_cifar10(results_dir, checkpoints_dir, log_dir)
+        train_cnn5_cifar10(outputs_dir)
+    elif args.model == 'resnet18' and args.dataset == 'cifar10':
+        train_resnet18k_cifar10(outputs_dir)

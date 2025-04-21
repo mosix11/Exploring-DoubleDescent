@@ -1,4 +1,4 @@
-
+import comet_ml
 from src.datasets import MNIST, CIFAR10, FashionMNIST
 from src.models import FC1, CNN5
 from src.trainers import TrainerEp, TrainerGS

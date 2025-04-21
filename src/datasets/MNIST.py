@@ -16,6 +16,9 @@ class MNIST:
         batch_size: int = 256,
         img_size: tuple = (28, 28),
         subsample_size: int = -1,
+        class_subset: list = [],
+        label_noise: float = 0.0,
+        augmentations: list = [],
         num_workers: int = 2,
         valset_ratio: float = 0.05,
         normalize_imgs: bool = False,
@@ -33,6 +36,9 @@ class MNIST:
         self.img_size = img_size
         self.num_workers = num_workers
         self.subsample_size = subsample_size
+        self.class_subset = class_subset
+        self.label_noise = label_noise
+        self.augmentations = augmentations
         self.trainset_ration = 1 - valset_ratio
         self.valset_ratio = valset_ratio
         self.normalize_imgs = normalize_imgs
@@ -48,22 +54,37 @@ class MNIST:
             self.generator = torch.Generator()
             self.generator.manual_seed(self.seed)
 
-        transformations = [
+        self._init_loaders()
+
+
+    def get_transforms(self, train=True):
+        trnsfrms = []
+
+        if self.img_size != (28, 28):
+            trnsfrms.append(transforms.Resize(self.img_size))
+
+
+        if len(self.augmentations) > 0 and train:
+            print('Augmentation active')
+            # trnsfrms.append(transforms.RandomCrop(28, padding=4))
+            # trnsfrms.append(transforms.RandomHorizontalFlip())    
+            trnsfrms.extend(self.augmentations) 
+
+
+        trnsfrms.extend([
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
             transforms.ToDtype(
                 torch.float32, scale=True
             ),  # Scale to [0.0, 1.0] and set dtype
-        ]
-        if self.img_size != (28, 28):
-            transformations.insert(0, transforms.Resize(img_size))
+        ])
+
         if self.normalize_imgs:
-            transformations.append(transforms.Normalize((0.1307,), (0.3081,))) # Values Specific to MNIST
+            trnsfrms.append(transforms.Normalize((0.1307,), (0.3081,))) # Values Specific to MNIST
+
         if self.flatten:
-            transformations.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
+            trnsfrms.append(transforms.Lambda(lambda x: torch.flatten(x)))  # Use Lambda for flattening
 
-        self.transformations = transforms.Compose(transformations)
-
-        self._init_loaders()
+        return transforms.Compose(trnsfrms)
 
     def get_train_dataloader(self):
         return self.train_loader
@@ -73,23 +94,30 @@ class MNIST:
 
     def get_test_dataloader(self):
         return self.test_loader
+    
+    def get_identifier(self):
+        identifier = 'mnist|'
+        identifier += f'ln{self.label_noise}|'
+        identifier += 'aug|' if len(self.augmentations) > 0 else 'noaug|'
+        identifier += f'subsample-{self.subsample_size}' if self.subsample_size > 0 else 'full'
+        return identifier
 
     def _init_loaders(self):
         train_dataset = datasets.MNIST(
             root=self.dataset_dir,
             train=True,
-            transform=self.transformations,
+            transform=self.get_transforms(train=True),
             download=True,
         )
         test_dataset = datasets.MNIST(
             root=self.dataset_dir,
             train=False,
-            transform=self.transformations,
+            transform=self.get_transforms(train=False),
             download=True,
         )
         
         # Subsample the dataset uniformly
-        if self.subsample_size != -1:
+        if self.subsample_size > 0:
             indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size]
             train_dataset = Subset(train_dataset, indices.tolist())
 

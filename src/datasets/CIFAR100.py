@@ -11,7 +11,7 @@ from pathlib import Path
 import random
 import numpy as np
 
-class CIFAR10:
+class CIFAR100: 
     
     class _LabelRemapper(Dataset):
         """
@@ -50,7 +50,7 @@ class CIFAR10:
 
         
         data_dir.mkdir(exist_ok=True, parents=True)
-        dataset_dir = data_dir / Path("CIFAR10")
+        dataset_dir = data_dir / Path("CIFAR100") # Changed the dataset directory name
         dataset_dir.mkdir(exist_ok=True, parents=True)
         self.dataset_dir = dataset_dir
 
@@ -94,6 +94,7 @@ class CIFAR10:
             # trnsfrms.append(transforms.RandomHorizontalFlip())    
             trnsfrms.extend(self.augmentations) 
 
+
         trnsfrms.extend([
             transforms.ToImage(),  # Convert PIL Image/NumPy to tensor
             transforms.ToDtype(
@@ -105,7 +106,7 @@ class CIFAR10:
             mean, std = (
                 (0.5,), (0.5,)
                 if self.grayscale
-                else ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)) # Values Specific to CIFAR
+                else ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)) # Values Specific to CIFAR-100
             )
             trnsfrms.append(transforms.Normalize(mean, std))
 
@@ -116,7 +117,7 @@ class CIFAR10:
 
     def _apply_label_noise(self, dataset):
         num_samples = len(dataset)
-        num_classes = len(self.class_subset) if self.class_subset else 10
+        num_classes = len(self.class_subset) if self.class_subset else 100 # Changed number of classes to 100
 
         # Generate random numbers to decide which labels to flip
         noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
@@ -152,20 +153,21 @@ class CIFAR10:
         return self.test_loader
     
     def get_identifier(self):
-        identifier = 'cifar10|'
+        identifier = 'cifar100|'
         identifier += f'ln{self.label_noise}|'
         identifier += 'aug|' if len(self.augmentations) > 0 else 'noaug|'
         identifier += f'subsample-{self.subsample_size}' if self.subsample_size > 0 else 'full'
         return identifier
-
+    
+    
     def _init_loaders(self):
-        train_dataset = datasets.CIFAR10(
+        train_dataset = datasets.CIFAR100( # Changed to CIFAR100
             root=self.dataset_dir,
             train=True,
             transform=self.get_transforms(train=True),
             download=True,
         )
-        test_dataset = datasets.CIFAR10(
+        test_dataset = datasets.CIFAR100( # Changed to CIFAR100
             root=self.dataset_dir,
             train=False,
             transform=self.get_transforms(train=False),

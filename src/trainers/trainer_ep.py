@@ -1,19 +1,20 @@
+import comet_ml
 import torch
 from torch.optim import AdamW, Adam, SGD
 from torch.amp import GradScaler
 from torch.amp import autocast
-from torch.utils.tensorboard import SummaryWriter
+
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnealingLR
 from .custom_lr_schedulers import InverseSquareRootLR
 
+
 import os
-import socket
-import datetime
 from pathlib import Path
 import time
 from tqdm import tqdm
 import random
 import numpy as np
+import dotenv
 
 from typing import List, Tuple, Union
 
@@ -25,6 +26,8 @@ class TrainerEp:
 
     def __init__(
         self,
+        outputs_dir: Path = Path("./outputs"),
+        dotenv_path: Path = Path("./.env"),
         max_epochs: int = 400,
         optimizer_cfg: dict = {
                 'type': 'adamw',
@@ -32,16 +35,26 @@ class TrainerEp:
                 'betas': (0.9, 0.999)
             },
         lr_schedule_cfg: dict = None,
-        outputs_dir: Path = Path("./outputs"),
         validation_freq: int = None,
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
         batch_prog: bool = False,
-        log_tensorboard: bool = False,
-        log_dir: Path = None,
+        log_comet: bool = False,
+        comet_project_name: str = None,
+        exp_name: str = None,
+        exp_tags: List[str] = None,
         seed: int = None
     ):
+        outputs_dir.mkdir(exist_ok=True)
+        self.outputs_dir = outputs_dir
+        self.checkpoint_dir = outputs_dir / Path(exp_name) / Path('checkpoint')
+        self.log_dir = outputs_dir / Path(exp_name) / Path('log')
+        
+        if dotenv_path.exists():
+            dotenv.load_dotenv('.env')
+            
+            
         if seed:
             self.seed = seed
             random.seed(seed)
@@ -60,8 +73,7 @@ class TrainerEp:
         self.run_on_gpu = run_on_gpu
         self.use_amp = use_amp
 
-        outputs_dir.mkdir(exist_ok=True)
-        self.outputs_dir = outputs_dir
+        
 
         self.max_epochs = max_epochs
         self.optimizer_cfg = optimizer_cfg
@@ -71,13 +83,14 @@ class TrainerEp:
         self.validation_freq = validation_freq
 
         self.batch_prog = batch_prog
-        self.log_tensorboard = log_tensorboard
+        self.log_comet = log_comet
+        self.comet_project_name = comet_project_name
+        self.exp_name = exp_name
+        self.exp_tags = exp_tags
+        if log_comet and comet_project_name is None:
+            raise RuntimeError('When CometML logging is active, the `comet_project_name` must be specified.')
 
-        if self.log_tensorboard:
-            if log_dir:
-                self.writer = SummaryWriter(str(log_dir.absolute()))
-            else:
-                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/general').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
+            
 
         
 
@@ -164,26 +177,44 @@ class TrainerEp:
         #     self.early_stopping = nn_utils.EarlyStopping(patience=8, min_delta=0.001, mode='max', verbose=False)
         self.optim = optim
 
+    def configure_logger(self, experiment_key=None):
+        experiment_config = comet_ml.ExperimentConfig(
+            name=self.exp_name,
+            tags=self.exp_tags
+        )
+        self.comet_experiment = comet_ml.start(
+            api_key=os.getenv('COMET_API_KEY'),
+            workspace="mosix11",
+            project_name=self.comet_project_name,
+            experiment_key=experiment_key,
+            online=True,
+            experiment_config=experiment_config
+        )
+
     def fit(self, model, dataset, resume=False):
         self.setup_data_loaders(dataset)
 
         if resume:
-            ...
-            # ckp_path = self.checkpoints_dir.joinpath("model_ckp.pt")
-            # if not ckp_path.exists():
-            #     raise RuntimeError(
-            #         "There is no checkpoint saved! Set the `resume` flag to False."
-            #     )
-            # checkpoint = torch.load(ckp_path)
-            # self.prepare_model(model, checkpoint["model_state"])
-            # self.configure_optimizers(
-            #     checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
-            # )
-            # self.epoch = checkpoint["epoch"]
+            ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
+            if not ckp_path.exists():
+                raise RuntimeError(
+                    "There is no checkpoint saved! Set the `resume` flag to False."
+                )
+            checkpoint = torch.load(ckp_path)
+            self.prepare_model(model, checkpoint["model_state"])
+            self.configure_optimizers(
+                checkpoint["optim_state"], last_epoch=checkpoint["epoch"]
+            )
+            self.epoch = checkpoint["epoch"]
+            if self.log_comet:
+                self.configure_logger(checkpoint["exp_key"])
         else:
             self.prepare_model(model)
             self.configure_optimizers()
+            if self.log_comet:
+                self.configure_logger()
             self.epoch = 0
+
 
         self.grad_scaler = GradScaler("cuda", enabled=self.use_amp)
 
@@ -202,6 +233,8 @@ class TrainerEp:
                     break
                 self.fit_epoch()
 
+        
+
         train_results = self.evaluate(set='train')
         test_results = self.evaluate(set='test')
         results = {
@@ -210,8 +243,10 @@ class TrainerEp:
             'test_loss': test_results['loss'],
             'test_acc': test_results['acc']
         }
-        if self.log_tensorboard:
-            self.writer.flush()
+        
+        if self.log_comet:
+            self.comet_experiment.log_parameters(results, prefix='final')
+            self.comet_experiment.end()
         
         return results
 
@@ -250,8 +285,8 @@ class TrainerEp:
                 loss.backward()
                 self.optim.step()
                 
-            epoch_train_loss.update(loss.item(), n=input_batch.shape[0])
-            epoch_train_acc.update(metric, input_batch.shape[0])
+            epoch_train_loss.update(loss.detach().cpu().item(), n=input_batch.shape[0])
+            epoch_train_acc.update(metric.detach().cpu().item(), input_batch.shape[0])
             
         if self.lr_scheduler:
             self.lr_scheduler.step()
@@ -265,11 +300,12 @@ class TrainerEp:
         #     f"Time taken: {int((time.time() - epoch_start_time)//60)}:"
         #     f"{int((time.time() - epoch_start_time)%60)} minutes"
         # )
-
-        if self.log_tensorboard:
-            self.writer.add_scalar('Train/Loss', epoch_train_loss.avg, self.epoch)
-            self.writer.add_scalar('Train/ACC', epoch_train_acc.avg, self.epoch)
-            self.writer.add_scalar('Train/LR', self.optim.param_groups[0]['lr'], self.epoch)
+        
+        statistics = {
+            'Train/Loss': epoch_train_loss.avg,
+            'Train/ACC': epoch_train_acc.avg,
+            'Train/LR': self.optim.param_groups[0]['lr']
+        }
             
         if epoch_train_loss.avg == 0.0 or epoch_train_acc.avg == 1.0:
             if self.early_stopping: self.early_stop = True
@@ -277,10 +313,11 @@ class TrainerEp:
         if self.validation_freq:
             if (self.epoch+1) % self.validation_freq == 0:
                 res = self.evaluate(set='test')
-                if self.log_tensorboard:
-                    self.writer.add_scalar('Test/Loss', res['loss'], self.epoch)
-                    self.writer.add_scalar('Test/ACC', res['acc'], self.epoch)
+                statistics['Test/Loss'] = res['loss']
+                statistics['Test/ACC'] = res['acc']
                 
+        if self.log_comet:
+            self.comet_experiment.log_metrics(statistics, epoch=self.epoch)
 
     def evaluate(self, set='val'):
         self.model.eval()
@@ -291,21 +328,21 @@ class TrainerEp:
             for i, batch in enumerate(self.train_dataloader):
                 input_batch, target_batch = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-                loss_met.update(loss.item(), n=input_batch.shape[0])
-                acc_met.update(metric, input_batch.shape[0])
+                loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
+                acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])
         elif set=='val':
             for i, batch in enumerate(self.val_dataloader):
                 input_batch, target_batch = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-                loss_met.update(loss.item(), n=input_batch.shape[0])
-                acc_met.update(metric, input_batch.shape[0])
+                loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
+                acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])
                 
         elif set=='test':
             for i, batch in enumerate(self.test_dataloader):
                 input_batch, target_batch = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
-                loss_met.update(loss.item(), n=input_batch.shape[0])
-                acc_met.update(metric, input_batch.shape[0])
+                loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
+                acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])
             
             
         results = {

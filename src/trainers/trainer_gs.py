@@ -1,3 +1,4 @@
+import comet_ml
 import torch
 from torch.optim import AdamW, Adam, SGD
 from torch.amp import GradScaler
@@ -7,13 +8,12 @@ from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnea
 from .custom_lr_schedulers import InverseSquareRootLR
 
 import os
-import socket
-import datetime
 from pathlib import Path
 import time
 from tqdm import tqdm
 import random
 import numpy as np
+import dotenv
 
 from typing import List, Tuple, Union
 
@@ -26,6 +26,8 @@ class TrainerGS:
 
     def __init__(
         self,
+        outputs_dir: Path = Path("./outputs"),
+        dotenv_path: Path = Path("./.env"),
         max_gradient_steps: int = 100000,
         optimizer_cfg: dict = {
                 'type': 'adamw',
@@ -33,15 +35,23 @@ class TrainerGS:
                 'betas': (0.9, 0.999)
             },
         lr_schedule_cfg: dict = None,
-        outputs_dir: Path = Path("./outputs"),
         validation_freq: int = None,
         early_stopping: bool = False,
         run_on_gpu: bool = True,
         use_amp: bool = True,
-        log_tensorboard: bool = False,
-        log_dir: Path = None,
+        log_comet: bool = False,
+        comet_project_name: str = None,
+        exp_name: str = None,
+        exp_tags: List[str] = None,
         seed: int = None
     ):
+        
+        outputs_dir.mkdir(exisQt_ok=True)
+        self.outputs_dir = outputs_dir
+        if dotenv_path.exists():
+            dotenv.load_dotenv('.env')
+        
+        
         if seed:
             self.seed = seed
             random.seed(seed)
@@ -60,8 +70,7 @@ class TrainerGS:
         self.run_on_gpu = run_on_gpu
         self.use_amp = use_amp
 
-        outputs_dir.mkdir(exist_ok=True)
-        self.outputs_dir = outputs_dir
+
 
         self.max_gradient_steps = max_gradient_steps
         self.optimizer_cfg = optimizer_cfg
@@ -70,13 +79,13 @@ class TrainerGS:
         self.validation_freq = validation_freq
         self.early_stopping = early_stopping
 
-        self.log_tensorboard = log_tensorboard
-
-        if self.log_tensorboard:
-            if log_dir:
-                self.writer = SummaryWriter(str(log_dir.absolute()))
-            else:
-                self.writer = SummaryWriter(self.outputs_dir.joinpath('tensorboard/general').joinpath(socket.gethostname()+'-'+str(datetime.datetime.now())))
+        self.log_comet = log_comet
+        self.comet_project_name = comet_project_name
+        self.exp_name = exp_name
+        self.exp_tags = exp_tags
+        if log_comet and comet_project_name is None:
+            raise RuntimeError('When CometML logging is active, the `comet_project_name` must be specified.')
+        
 
 
     def setup_data_loaders(self, dataset):

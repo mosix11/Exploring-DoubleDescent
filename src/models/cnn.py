@@ -20,6 +20,9 @@ class CNN5(nn.Module):
     ):
         super().__init__()
         
+        self.num_channels = num_channels
+        self.num_classes = num_classes
+        
         self.net = nn.Sequential(
             # Layer 0
             nn.Conv2d(3, num_channels, kernel_size=3, stride=1,
@@ -92,3 +95,7 @@ class CNN5(nn.Module):
     
     def forward(self, x):
         return self.net(x)
+    
+    
+    def get_identifier(self):
+        return f"cnn5|k{self.num_channels}"

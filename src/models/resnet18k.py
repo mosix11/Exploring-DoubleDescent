@@ -53,6 +53,7 @@ class PreActResNet(nn.Module):
     ):
         super(PreActResNet, self).__init__()
         self.in_planes = init_channels
+        self.k = init_channels
         c = init_channels
         
         
@@ -114,6 +115,8 @@ class PreActResNet(nn.Module):
         else:
             return loss, None
 
+    def get_identifier(self):
+        return f"resnet18|k{self.k}"
 
 def make_resnet18k(
     k=64, num_classes=10, weight_init=None, loss_fn=nn.CrossEntropyLoss, metric=None

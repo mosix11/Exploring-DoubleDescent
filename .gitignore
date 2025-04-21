@@ -7,6 +7,10 @@ outputs/
 output/
 backups/
 .vscode/
+.cometml-runs
+###################
+# Environment variables
+.env
 ###################
 __pycache__/
 
