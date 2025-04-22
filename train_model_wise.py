@@ -83,10 +83,10 @@ def train_fc1_mnist(outputs_dir: Path):
 
     
     experiment = dataset.get_identifier()
-    experiment += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
-    if lr_schedule_cfg: experiment += f'|{lr_schedule_cfg['type']}'
+    experiment += "_" + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
     
-    outputs_dir = outputs_dir / Path(f'fc1_{experiment}')
+    outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
     outputs_dir.mkdir(exist_ok=True, parents=True)
     
     last_experiment_name = None
@@ -127,10 +127,10 @@ def train_fc1_mnist(outputs_dir: Path):
             early_stopping=early_stopping,
             validation_freq=1,
             save_best_model=True,
-            run_on_gpu=True,
+            run_on_gpu=False,
             use_amp=False,
             batch_prog=False,
-            log_comet=True,
+            log_comet=False,
             comet_api_key=os.getenv('COMET_API_KEY'),
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
@@ -139,7 +139,7 @@ def train_fc1_mnist(outputs_dir: Path):
         )
 
         results = trainer.fit(model, dataset, resume=False)
-        print(f'Results for param {param}: {results}')
+        print(f"Results for param {param}: {results}")
 
         last_experiment_name = experiment_name
 
@@ -194,7 +194,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     weight_init_method = partial(nn_utils.init_normal, mean=0.0, std=0.1)
     
-    experiment = f'FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{seed}'
+    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -223,8 +223,8 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             metric=acc_metric,
         )
         experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
-        experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
-        if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
 
         trainer = TrainerEp(
@@ -246,7 +246,6 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             seed=seed
         )
         results = trainer.fit(model, dataset, resume=False)
-        # print(f'Results for param {config['param']}: {results}')
         train.report(results)
         
     configs = {
@@ -337,10 +336,10 @@ def train_fc1_cifar10(outputs_dir: Path):
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
     experiment = dataset.get_identifier()
-    experiment += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
-    if lr_schedule_cfg: experiment += f'|{lr_schedule_cfg['type']}'
+    experiment += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
     
-    outputs_dir = outputs_dir / Path(f'fc1_{experiment}')
+    outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
     outputs_dir.mkdir(exist_ok=True, parents=True)
 
     last_experiment_name = None
@@ -392,7 +391,7 @@ def train_fc1_cifar10(outputs_dir: Path):
         )
 
         results = trainer.fit(model, dataset, resume=False)
-        print(f'Results for param {param}: {results}')
+        print(f"Results for param {param}: {results}")
 
         last_experiment_name = experiment_name
 
@@ -468,10 +467,10 @@ def train_cnn5_cifar10(outputs_dir: Path):
     )
     
     experiment = dataset.get_identifier()
-    experiment += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
-    if lr_schedule_cfg: experiment += f'|{lr_schedule_cfg['type']}'
+    experiment += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
     
-    outputs_dir = outputs_dir / Path(f'fc1_{experiment}')
+    outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
     outputs_dir.mkdir(exist_ok=True, parents=True)
     
 
@@ -511,7 +510,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
 
 
         results = trainer.fit(model, dataset, resume=False)
-        print(f'Results for param {param}: {results}')
+        print(f"Results for param {param}: {results}")
 
 
 def train_cnn5_cifar10_parallel(outputs_dir: Path):
@@ -575,7 +574,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         transformsv2.RandomHorizontalFlip()
     ]
     
-    experiment = f'CNN5_CIFAR10+NoAug+{label_noise}Noise)_Parallel_Seed{seed}'
+    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Parallel_Seed{seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -602,8 +601,8 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         )
         
         experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
-        experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
-        if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
         
         early_stopping = False 
@@ -626,7 +625,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         )
 
         results = trainer.fit(model, dataset, resume=False)
-        # print(f'Results for param {param}: {results}')
+        # print(f"Results for param {param}: {results}"")
         
         train.report(results)
         
