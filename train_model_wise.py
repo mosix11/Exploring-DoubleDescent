@@ -81,10 +81,7 @@ def train_fc1_mnist(outputs_dir: Path):
     loss_fn = torch.nn.MSELoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
-    
-    experiment = dataset.get_identifier()
-    experiment += "_" + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
-    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
+    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{seed}"
     
     outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -108,7 +105,9 @@ def train_fc1_mnist(outputs_dir: Path):
             metric=acc_metric,
         )
         
-        experiment_name = model.get_identifier() + '_' + experiment
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}" + 'Wreuse'
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
 
         # In underparameterized regime, we reuse weights from the last trained model.
@@ -222,7 +221,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             loss_fn=loss_fn,
             metric=acc_metric,
         )
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -335,11 +334,9 @@ def train_fc1_cifar10(outputs_dir: Path):
 
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
-    experiment = dataset.get_identifier()
-    experiment += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
-    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
+    experiment = f"FC1_CIFAR10(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{seed}"
     
-    outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
+    outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
 
     last_experiment_name = None
@@ -361,7 +358,9 @@ def train_fc1_cifar10(outputs_dir: Path):
             metric=acc_metric,
         )
 
-        experiment_name = model.get_identifier() + '_' + experiment
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}" +  'Wreuse'
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
 
         # In underparameterized regime, we reuse weights from the last trained model.
@@ -403,7 +402,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
     max_gradient_steps = 500000
     subsample_size = (-1, -1) # Train and Test
     batch_size = 128
-    label_noise = 0.0
+    label_noise = 0.2
     seed = 11
     param_range = [
         1,
@@ -466,11 +465,9 @@ def train_cnn5_cifar10(outputs_dir: Path):
         seed=11,
     )
     
-    experiment = dataset.get_identifier()
-    experiment += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
-    if lr_schedule_cfg: experiment += f"|{lr_schedule_cfg['type']}"
+    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Sequential_Seed{seed}"
     
-    outputs_dir = outputs_dir / Path(f"fc1_{experiment}")
+    outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
     
 
@@ -486,7 +483,9 @@ def train_cnn5_cifar10(outputs_dir: Path):
             metric=acc_metric
         )
         
-        experiment_name = model.get_identifier() + '_' + experiment
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
         
         early_stopping = False 
@@ -500,7 +499,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
             save_best_model=True,
             run_on_gpu=True,
             use_amp=True,
-            log_comet=True,
+            log_comet=False,
             comet_api_key=os.getenv('COMET_API_KEY'),
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
@@ -562,7 +561,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         "momentum": 0.0
     }
     lr_schedule_cfg = {
-        "type": "inv_sqr_root",
+        "type": "isqrt",
         "L": 512,
     }
     
@@ -600,8 +599,8 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             metric=acc_metric
         )
         
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
-        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
         
@@ -616,7 +615,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             save_best_model=True,
             run_on_gpu=True,
             use_amp=True,
-            log_comet=True,
+            log_comet=False,
             comet_api_key=os.getenv('COMET_API_KEY'),
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
@@ -632,7 +631,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
     configs = {
         "param": tune.grid_search(param_range)
     }
-    resources_per_expr = {"cpu": 1, "gpu": 0.1}
+    resources_per_expr = {"cpu": 1, "gpu": 0.25}
     trainable_with_gpu_resources = tune.with_resources(
         experiment_trainable,
         resources=resources_per_expr

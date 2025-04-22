@@ -63,7 +63,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
         metric=acc_metric
     )
     
-    experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+    experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
     experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
     if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
     experiment_tags = experiment_name.split('_')
@@ -137,7 +137,7 @@ def train_resnet18k_cifar10(outputs_dir: Path):
     
     # experiment_tags = model.get_identifier().split('_').append(dataset.get_identifier().split('_'))
     
-    experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+    experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
     experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
     if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
     experiment_tags = experiment_name.split('_')
