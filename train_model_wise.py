@@ -194,8 +194,6 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     weight_init_method = partial(nn_utils.init_normal, mean=0.0, std=0.1)
     
-    
-
     experiment = f'FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{seed}'
     
     outputs_dir = outputs_dir / Path(experiment)
@@ -208,7 +206,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
         dataset = MNIST(
             batch_size=batch_size,
             subsample_size=subsample_size,
-            num_workers=4,
+            num_workers=1,
             label_noise=label_noise,
             valset_ratio=0.0,
             normalize_imgs=False,
@@ -515,6 +513,153 @@ def train_cnn5_cifar10(outputs_dir: Path):
         results = trainer.fit(model, dataset, resume=False)
         print(f'Results for param {param}: {results}')
 
+
+def train_cnn5_cifar10_parallel(outputs_dir: Path):
+        # 500k steps for SGD -> Each epoch with batch size 128 = 391 gradient steps -> 1279 epochs
+    # 4k epochs for Adam
+    
+    max_gradient_steps = 500000
+    subsample_size = (-1, -1) # Train and Test
+    batch_size = 128
+    label_noise = 0.0
+    seed = 11
+    param_range = [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        24,
+        28,
+        32,
+        38,
+        48,
+        64
+    ]
+
+    # optim_cgf = {
+    #     'type': 'adamw',
+    #     'lr': 1e-4,
+    #     'betas': (0.9, 0.999)
+    # }
+    optim_cgf = {
+        "type": "sgd",
+        "lr": 1e-1,
+        "momentum": 0.0
+    }
+    lr_schedule_cfg = {
+        "type": "inv_sqr_root",
+        "L": 512,
+    }
+    
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
+    
+    augmentations = [
+        transformsv2.RandomCrop(32, padding=4),
+        transformsv2.RandomHorizontalFlip()
+    ]
+    
+    experiment = f'CNN5_CIFAR10+NoAug+{label_noise}Noise)_Parallel_Seed{seed}'
+    
+    outputs_dir = outputs_dir / Path(experiment)
+    outputs_dir.mkdir(exist_ok=True, parents=True)
+    
+    
+    def experiment_trainable(config):
+        dataset = CIFAR10(
+            batch_size=batch_size,
+            grayscale=False,
+            label_noise=label_noise,
+            subsample_size=subsample_size,
+            valset_ratio=0.0,
+            normalize_imgs=False,
+            flatten=False,
+            num_workers=1,
+            seed=seed,
+        )
+        
+        model = CNN5(
+            num_channels=config['param'],
+            num_classes=10,
+            loss_fn=loss_fn,
+            metric=acc_metric
+        )
+        
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier()
+        experiment_name += '_' + f'{optim_cgf['type']}|lr{optim_cgf["lr"]}|b{batch_size}|noAMP'
+        if lr_schedule_cfg: experiment_name += f'|{lr_schedule_cfg['type']}'
+        experiment_tags = experiment_name.split('_')
+        
+        early_stopping = False 
+        trainer = TrainerGS(
+            outputs_dir=outputs_dir,
+            max_gradient_steps=max_gradient_steps,
+            optimizer_cfg=optim_cgf,
+            lr_schedule_cfg=lr_schedule_cfg,
+            early_stopping=early_stopping,
+            validation_freq=1, # Epoch
+            save_best_model=True,
+            run_on_gpu=True,
+            use_amp=True,
+            log_comet=True,
+            comet_api_key=os.getenv('COMET_API_KEY'),
+            comet_project_name='doubledescent-modelwise',
+            exp_name=experiment_name,
+            exp_tags=experiment_tags,
+            seed=seed
+        )
+
+        results = trainer.fit(model, dataset, resume=False)
+        # print(f'Results for param {param}: {results}')
+        
+        train.report(results)
+        
+    configs = {
+        "param": tune.grid_search(param_range)
+    }
+    resources_per_expr = {"cpu": 1, "gpu": 0.1}
+    trainable_with_gpu_resources = tune.with_resources(
+        experiment_trainable,
+        resources=resources_per_expr
+    )
+    
+    ray_strg_dir = outputs_dir / Path('ray')
+    ray_strg_dir.mkdir(exist_ok=True, parents=True)
+    tuner = tune.Tuner(
+        trainable_with_gpu_resources, # Your trainable function wrapped with resources
+        param_space=configs,    # The hyperparameters to explore
+        tune_config=TuneConfig(
+            scheduler=None
+        ),
+        run_config=RunConfig(
+            name=None, # Name for this experiment run
+            storage_path=str(ray_strg_dir.absolute()), # Default location for results
+            failure_config=FailureConfig(
+                max_failures=-1 # -1: Continue running other trials if one fails
+                                # 0 (Default): Stop entire run if one trial fails
+            )
+        )
+    )
+    results = tuner.fit()
+    print(results)
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -562,4 +707,7 @@ if __name__ == "__main__":
     elif args.model == "fc1" and args.dataset == "cifar10":
         train_fc1_cifar10(outputs_dir)
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
-        train_cnn5_cifar10(outputs_dir)
+        if args.parallel:
+            train_cnn5_cifar10_parallel(outputs_dir)
+        else:
+            train_cnn5_cifar10(outputs_dir)
