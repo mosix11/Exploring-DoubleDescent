@@ -18,7 +18,6 @@ import os
 
 
 def train_cnn5_cifar10(outputs_dir: Path):
-    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     
     max_epochs = 30
     batch_size = 128
@@ -88,18 +87,18 @@ def train_cnn5_cifar10(outputs_dir: Path):
     )
 
     results = trainer.fit(model, dataset, resume=False)
-    
-    print(
-        f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
-    )
+    print('results:', results)
+    # print(
+    #     f"\n\n\nTraining experiment {experiment_name} finished with final results {results['final']}, and best results {results['best']}\n\n\n"
+    # )
     
         
 
 def train_resnet18k_cifar10(outputs_dir: Path):
-    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     max_epochs = 30
     batch_size = 128
     label_noise = 0.2
+    seed = 22
     optim_cgf = {
         'type': 'adam',
         'lr': 1e-4,
@@ -122,7 +121,7 @@ def train_resnet18k_cifar10(outputs_dir: Path):
         valset_ratio=0.0,
         normalize_imgs=False,
         flatten=False,
-        seed=22,
+        seed=seed,
     )
 
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -159,13 +158,13 @@ def train_resnet18k_cifar10(outputs_dir: Path):
         comet_project_name='doubledescent-epochwise',
         exp_name=experiment_name,
         exp_tags=experiment_tags,
-        seed=22
+        seed=seed
     )
 
     results = trainer.fit(model, dataset, resume=False)
     
     print(
-        f"\n\n\nTraining the model with hidden layer size {param} finished with test loss {results['test_loss']}, test acc {results['test_acc']}, train loss {results['train_loss']}, train acc {results['train_acc']}.\n\n\n"
+        f"\n\n\nTraining experiment {experiment_name} finished with final results {results['final']}, and best results {results['best']}\n\n\n"
     )
 
 

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 import random
 import numpy as np
+from typing import Tuple
 
 class CIFAR100: 
     
@@ -34,7 +35,7 @@ class CIFAR100:
         data_dir: Path = Path("./data").absolute(),
         batch_size: int = 256,
         img_size: tuple = (32, 32),
-        subsample_size: int = -1,
+        subsample_size: Tuple[int, int] = (-1, -1), # (TrainSet size, TestSet size)
         class_subset: list = [],
         label_noise: float = 0.0,
         grayscale: bool = False,
@@ -156,7 +157,7 @@ class CIFAR100:
         identifier = 'cifar100|'
         identifier += f'ln{self.label_noise}|'
         identifier += 'aug|' if len(self.augmentations) > 0 else 'noaug|'
-        identifier += f'subsample-{self.subsample_size}' if self.subsample_size > 0 else 'full'
+        identifier += f'subsample{self.subsample_size}' if self.subsample_size != (-1, -1) else 'full'
         return identifier
     
     
@@ -189,9 +190,11 @@ class CIFAR100:
             test_dataset = Subset(test_dataset, test_idxs)
         
         # Subsample the dataset uniformly
-        if self.subsample_size > 0:
-            indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size]
-            train_dataset = Subset(train_dataset, indices.tolist())
+        if self.subsample_size != (-1, -1):
+            train_indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size[0]]
+            test_indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size[1]]
+            train_dataset = Subset(train_dataset, train_indices.tolist())
+            test_dataset = Subset(test_dataset, test_indices.tolist())
 
         if self.valset_ratio == 0.0:
             trainset = train_dataset

@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.data import Subset
 import os
 import sys
+from typing import Tuple
 from pathlib import Path
 import random
 import numpy as np
@@ -15,7 +16,7 @@ class MNIST:
         data_dir: Path = Path("./data").absolute(),
         batch_size: int = 256,
         img_size: tuple = (28, 28),
-        subsample_size: int = -1,
+        subsample_size: Tuple[int, int] = (-1, -1), # (TrainSet size, TestSet size)
         class_subset: list = [],
         label_noise: float = 0.0,
         augmentations: list = [],
@@ -36,6 +37,7 @@ class MNIST:
         self.img_size = img_size
         self.num_workers = num_workers
         self.subsample_size = subsample_size
+        
         self.class_subset = class_subset
         self.label_noise = label_noise
         self.augmentations = augmentations
@@ -99,7 +101,7 @@ class MNIST:
         identifier = 'mnist|'
         identifier += f'ln{self.label_noise}|'
         identifier += 'aug|' if len(self.augmentations) > 0 else 'noaug|'
-        identifier += f'subsample-{self.subsample_size}' if self.subsample_size > 0 else 'full'
+        identifier += f'subsample{self.subsample_size}' if self.subsample_size != (-1, -1) else 'full'
         return identifier
 
     def _init_loaders(self):
@@ -117,9 +119,11 @@ class MNIST:
         )
         
         # Subsample the dataset uniformly
-        if self.subsample_size > 0:
-            indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size]
-            train_dataset = Subset(train_dataset, indices.tolist())
+        if self.subsample_size != (-1, -1):
+            train_indices = torch.randperm(len(train_dataset), generator=self.generator)[:self.subsample_size[0]]
+            test_indices = torch.randperm(len(test_dataset), generator=self.generator)[:self.subsample_size[1]]
+            train_dataset = Subset(train_dataset, train_indices.tolist())
+            test_dataset = Subset(test_dataset, test_indices.tolist())
 
         if self.valset_ratio == 0.0:
             trainset = train_dataset

@@ -15,6 +15,8 @@ from tqdm import tqdm
 import random
 import numpy as np
 import dotenv
+import copy
+import json
 
 from typing import List, Tuple, Union
 
@@ -43,6 +45,7 @@ class TrainerEp:
         use_amp: bool = True,
         batch_prog: bool = False,
         log_comet: bool = False,
+        comet_api_key: str = "",
         comet_project_name: str = None,
         exp_name: str = None,
         exp_tags: List[str] = None,
@@ -66,9 +69,11 @@ class TrainerEp:
             torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = False
+        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
         torch.use_deterministic_algorithms(True) 
         torch.set_float32_matmul_precision("high")
-
+        
+        
         self.cpu = nn_utils.get_cpu_device()
         self.gpu = nn_utils.get_gpu_device()
         if self.gpu == None and run_on_gpu:
@@ -87,13 +92,21 @@ class TrainerEp:
         self.save_best_model = save_best_model
         
         if save_best_model:
-            self.best_model_perf = -torch.inf
+            if validation_freq < 1:
+                raise RuntimeError('In order to save the best model the validation phase needs to be done. Sepcify `validation_freq`.')
+            self.best_model_perf = {
+                'Train/Loss': torch.inf,
+                'Train/ACC': 0,
+                'Test/Loss': torch.inf,
+                'Test/ACC': 0
+            }
             
         self.early_stopping = early_stopping
         
 
         self.batch_prog = batch_prog
         self.log_comet = log_comet
+        self.comet_api_key = comet_api_key
         self.comet_project_name = comet_project_name
         self.exp_name = exp_name
         self.exp_tags = exp_tags
@@ -194,7 +207,7 @@ class TrainerEp:
             tags=self.exp_tags
         )
         self.comet_experiment = comet_ml.start(
-            api_key=os.getenv('COMET_API_KEY'),
+            api_key=self.comet_api_key,
             workspace="mosix11",
             project_name=self.comet_project_name,
             experiment_key=experiment_key,
@@ -241,24 +254,30 @@ class TrainerEp:
 
         final_train_results = self.evaluate(set='train')
         final_test_results = self.evaluate(set='test')
-        final_results = {
-            'train_loss': final_train_results['loss'],
-            'train_acc': final_train_results['acc'],
-            'test_loss': final_test_results['loss'],
-            'test_acc': final_test_results['acc']
-        }
         
+        results = {
+            'final': {
+                'Train/Loss': final_train_results['loss'],
+                'Train/ACC': final_train_results['acc'],
+                'Test/Loss': final_test_results['loss'],
+                'Test/ACC': final_test_results['acc']
+            },
+        }
+
         if self.save_best_model:
-            ...
+            results['best'] = self.best_model_perf
         
         if self.log_comet:
-            self.comet_experiment.log_parameters(final_results, prefix='final')
+            self.comet_experiment.log_parameters(results, nested_support=True)
             self.comet_experiment.end()
         
         final_ckp_path = self.checkpoint_dir / Path('final_ckp.pth')
         self.save_full_checkpoint(final_ckp_path)
+        results_path = self.log_dir / Path('results.json')
+        with open(results_path, 'w') as json_file:
+            json.dump(results, json_file, indent=4)
         
-        return final_results
+        return results
 
 
     def fit_epoch(self):
@@ -320,14 +339,15 @@ class TrainerEp:
         if epoch_train_loss.avg == 0.0 or epoch_train_acc.avg == 1.0:
             if self.early_stopping: self.early_stop = True
         
-        if self.validation_freq:
+        if self.validation_freq > 0:
             if (self.epoch+1) % self.validation_freq == 0:
                 res = self.evaluate(set='test')
                 statistics['Test/Loss'] = res['loss']
                 statistics['Test/ACC'] = res['acc']
                 if self.save_best_model:
-                    if self.best_model_perf < statistics['Test/ACC']:
-                        self.best_model_perf = statistics['Test/ACC']
+                    if self.best_model_perf['Test/ACC'] < statistics['Test/ACC']:
+                        self.best_model_perf = copy.deepcopy(statistics)
+                        self.best_model_perf['epoch'] = self.epoch
                         ckp_path = self.checkpoint_dir / Path('best_ckp.pth')
                         self.save_full_checkpoint(ckp_path)
         

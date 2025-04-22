@@ -62,24 +62,30 @@ class FC1(nn.Module):
             self.out.weight.data[:, :old_h].copy_(old_state['out.weight'])
             self.out.bias.data.copy_(old_state['out.bias'])
 
-    def training_step(self, x, y, use_amp=False):
-        y = F.one_hot(y, num_classes=self.output_dim).float()
+    def training_step(self, x, y, use_amp=False):        
         with autocast('cuda', enabled=use_amp):
             preds = self(x)
-            loss = self.loss_fn(preds, y)
+            if isinstance(self.loss_fn, torch.nn.MSELoss):
+                y_onehot = F.one_hot(y, num_classes=self.output_dim).float()
+                loss = self.loss_fn(preds, y_onehot)
+            else:
+                loss = self.loss_fn(preds, y)
         if self.metric:
             met = self.metric(preds, y)
             return loss, met
         else: return loss, None
         
     def validation_step(self, x, y, use_amp=False):
-        y = F.one_hot(y, num_classes=self.output_dim).float()
         with torch.no_grad():
             with autocast('cuda', enabled=use_amp):
                 preds = self(x)
-                loss = self.loss_fn(preds, y)
+                if isinstance(self.loss_fn, torch.nn.MSELoss):
+                    y_onehot = F.one_hot(y, num_classes=self.output_dim).float()
+                    loss = self.loss_fn(preds, y_onehot)
+                else:
+                    loss = self.loss_fn(preds, y)
         if self.metric:
-            met = self.metric(y, preds)
+            met = self.metric(preds, y)
             return loss, met
         else: return loss, None
     
