@@ -198,6 +198,7 @@ class CIFAR10:
             trainset = train_dataset
             valset = None
         else:
+            
             trainset, valset = random_split(
                 train_dataset,
                 [self.trainset_ration, self.valset_ratio],
@@ -209,6 +210,7 @@ class CIFAR10:
             train_dataset = self._apply_label_noise(train_dataset)
             
         if self.class_subset != None and len(self.class_subset) >= 1:
+            
             mapping = {orig: new for new, orig in enumerate(self.class_subset)}
             trainset = self._LabelRemapper(trainset, mapping)
             if valset is not None:

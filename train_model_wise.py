@@ -245,7 +245,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             seed=seed
         )
         results = trainer.fit(model, dataset, resume=False)
-        train.report(results)
+        tune.report(results)
         
     configs = {
         "param": tune.grid_search(param_range)
@@ -403,6 +403,8 @@ def train_cnn5_cifar10(outputs_dir: Path):
     subsample_size = (-1, -1) # Train and Test
     batch_size = 128
     label_noise = 0.2
+    use_amp = True
+    log_comet = True
     seed = 11
     param_range = [
         1,
@@ -440,11 +442,11 @@ def train_cnn5_cifar10(outputs_dir: Path):
     # }
     optim_cgf = {
         "type": "sgd",
-        "lr": 1e-1,
+        "lr": 1e-2,
         "momentum": 0.0
     }
     lr_schedule_cfg = {
-        "type": "inv_sqr_root",
+        "type": "isqrt",
         "L": 512,
     }
     
@@ -462,7 +464,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
         normalize_imgs=False,
         flatten=False,
         num_workers=4,
-        seed=11,
+        seed=seed,
     )
     
     experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Sequential_Seed{seed}"
@@ -484,7 +486,8 @@ def train_cnn5_cifar10(outputs_dir: Path):
         )
         
         experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
-        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
+        experiment_name += '|AMP' if use_amp else 'noAMP'
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
         
@@ -498,10 +501,10 @@ def train_cnn5_cifar10(outputs_dir: Path):
             validation_freq=1, # Epoch
             save_best_model=True,
             run_on_gpu=True,
-            use_amp=True,
-            log_comet=False,
+            use_amp=use_amp,
+            log_comet=log_comet,
             comet_api_key=os.getenv('COMET_API_KEY'),
-            comet_project_name='doubledescent-modelwise',
+            comet_project_name='doubledescent-test',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
             seed=seed
@@ -519,7 +522,9 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
     max_gradient_steps = 500000
     subsample_size = (-1, -1) # Train and Test
     batch_size = 128
-    label_noise = 0.0
+    label_noise = 0.2
+    use_amp = True
+    log_comet = True
     seed = 11
     param_range = [
         1,
@@ -557,7 +562,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
     # }
     optim_cgf = {
         "type": "sgd",
-        "lr": 1e-1,
+        "lr": 1e-2,
         "momentum": 0.0
     }
     lr_schedule_cfg = {
@@ -573,7 +578,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         transformsv2.RandomHorizontalFlip()
     ]
     
-    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Parallel_Seed{seed}"
+    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise_Parallel_Seed{seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -600,7 +605,8 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         )
         
         experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
-        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
+        experiment_name += '|AMP' if use_amp else 'noAMP'
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
         
@@ -614,10 +620,10 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             validation_freq=1, # Epoch
             save_best_model=True,
             run_on_gpu=True,
-            use_amp=True,
-            log_comet=True,
+            use_amp=use_amp,
+            log_comet=log_comet,
             comet_api_key=os.getenv('COMET_API_KEY'),
-            comet_project_name='doubledescent-modelwise',
+            comet_project_name='doubledescent-test',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
             seed=seed
@@ -626,12 +632,12 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         results = trainer.fit(model, dataset, resume=False)
         # print(f"Results for param {param}: {results}"")
         
-        train.report(results)
+        tune.report(results)
         
     configs = {
         "param": tune.grid_search(param_range)
     }
-    resources_per_expr = {"cpu": 1, "gpu": 0.25}
+    resources_per_expr = {"cpu": 1, "gpu": 0.1}
     trainable_with_gpu_resources = tune.with_resources(
         experiment_trainable,
         resources=resources_per_expr

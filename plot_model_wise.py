@@ -13,7 +13,8 @@ def analyze_and_plot_results_combined(root_directory):
                               model-specific subdirectories.
     """
     results = {}
-    subdirectory_pattern = re.compile(r"fc1\|h(\d+)_mnist\|ln0\.0\|noaug\|subsample\(4000, 1000\)_sgd\|lr0\.01\|b256\|noAMP\|step")
+    # subdirectory_pattern = re.compile(r"fc1\|h(\d+)_mnist\|ln0\.0\|noaug\|subsample\(4000, 1000\)_sgd\|lr0\.01\|b256\|noAMP\|step")
+    subdirectory_pattern = re.compile(r"cnn5\|k(\d+)_cifar10\|ln0\.2\|noaug\|full_seed11_sgd\|lr0\.01\|b128\|AMP\|isqrt")
 
     for item in os.listdir(root_directory):
         subdirectory_path = os.path.join(root_directory, item)
@@ -76,6 +77,7 @@ def analyze_and_plot_results_combined(root_directory):
     plt.show()
 
 if __name__ == "__main__":
-    root_dir = "outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.0Noise)_Parallel_Seed11"
+    # root_dir = "outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.0Noise)_Parallel_Seed11"
+    root_dir = "outputs/modelwise/CNN5_CIFAR10+NoAug+0.2Noise_Parallel_Seed11"
     analyze_and_plot_results_combined(root_dir)
     print("Script finished. Combined plot saved as combined_performance_vs_param.png in the root directory.")

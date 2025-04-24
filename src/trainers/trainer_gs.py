@@ -3,7 +3,6 @@ import torch
 from torch.optim import AdamW, Adam, SGD
 from torch.amp import GradScaler
 from torch.amp import autocast
-from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnealingLR
 from .custom_lr_schedulers import InverseSquareRootLR
 
