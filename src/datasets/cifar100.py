@@ -3,7 +3,7 @@ from torchvision import datasets
 import torchvision.transforms.v2 as transforms
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.data import Subset
-
+from .utils import LabelRemapper
 
 import os
 import sys
@@ -13,22 +13,7 @@ import numpy as np
 from typing import Tuple
 
 class CIFAR100: 
-    
-    class _LabelRemapper(Dataset):
-        """
-        Wraps any dataset whose __getitem__ returns (x, y)
-        and remaps y via a provided dict mapping_orig2new.
-        """
-        def __init__(self, base_dataset: Dataset, mapping_orig2new: dict):
-            self.base = base_dataset
-            self.map = mapping_orig2new
 
-        def __len__(self):
-            return len(self.base)
-
-        def __getitem__(self, idx):
-            x, y = self.base[idx]
-            return x, self.map[y]
 
     def __init__(
         self,
@@ -124,7 +109,7 @@ class CIFAR100:
         noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
 
         # Get the original labels
-        original_labels = torch.tensor(dataset.targets)
+        original_labels = dataset.targets.clone().detach()
 
         # Generate random incorrect labels
         random_labels = torch.randint(0, num_classes, (num_samples,), generator=self.generator)
@@ -212,10 +197,10 @@ class CIFAR100:
             
         if self.class_subset != None and len(self.class_subset) >= 1:
             mapping = {orig: new for new, orig in enumerate(self.class_subset)}
-            trainset = self._LabelRemapper(trainset, mapping)
+            trainset = LabelRemapper(trainset, mapping)
             if valset is not None:
-                valset = self._LabelRemapper(valset, mapping)
-            testset  = self._LabelRemapper(testset,  mapping)
+                valset = LabelRemapper(valset, mapping)
+            testset  = LabelRemapper(testset,  mapping)
    
         self.train_loader = self._build_dataloader(trainset)
         self.val_loader = (

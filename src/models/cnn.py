@@ -14,6 +14,7 @@ class CNN5(nn.Module):
         self,
         num_channels:int = 64,
         num_classes: int = 10,
+        gray_scale: bool = False,
         weight_init=None,
         loss_fn=nn.CrossEntropyLoss,
         metric=None,
@@ -25,7 +26,7 @@ class CNN5(nn.Module):
         
         self.net = nn.Sequential(
             # Layer 0
-            nn.Conv2d(3, num_channels, kernel_size=3, stride=1,
+            nn.Conv2d(1 if gray_scale else 3, num_channels, kernel_size=3, stride=1,
                     padding=1, bias=True),
             nn.BatchNorm2d(num_channels),
             nn.ReLU(),

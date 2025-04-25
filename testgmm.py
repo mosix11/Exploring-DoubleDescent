@@ -1,177 +1,152 @@
 import torch
-import math
-import matplotlib.pyplot as plt # Optional for visualization
+from torch.utils.data import Dataset, DataLoader, random_split
+import matplotlib.pyplot as plt
+import numpy as np # For converting tensors to numpy for plotting
 
-def make_classification_pytorch(
-    n_samples=100,
-    n_features=20,
-    n_classes=2,
-    n_clusters_per_class=1,
-    class_sep=1.0,
-    cluster_std=1.0,
-    label_noise=0.0,
-    shuffle=True,
-    random_state=None,
-    device=None,
-    dtype=torch.float32
-):
-    """
-    Generates synthetic classification data using PyTorch, similar to sklearn's make_classification.
+from src.datasets import MoGSyntheticDataset, MoGSynthetic
 
-    Args:
-        n_samples (int): Total number of samples to generate.
-        n_features (int): Number of features for each sample.
-        n_classes (int): Number of classes.
-        n_clusters_per_class (int): Number of Gaussian clusters contributing to each class.
-        class_sep (float): Factor multiplying the distance between cluster centers.
-                           Larger values create more separated classes.
-        cluster_std (float or list/tuple): Standard deviation of the clusters. If a float,
-                                         all clusters have the same std. If a list/tuple,
-                                         must match the total number of clusters.
-        label_noise (float): Fraction of labels to randomly flip (0.0 to 1.0).
-        shuffle (bool): Whether to shuffle the samples and labels.
-        random_state (int or torch.Generator): Seed or generator for reproducibility.
-        device (torch.device or str): Device to create tensors on ('cpu', 'cuda', etc.).
-        dtype (torch.dtype): Data type for the feature tensor X.
+seed = 10
 
-    Returns:
-        (torch.Tensor, torch.Tensor): Tuple containing:
-            - X: Feature tensor shape (n_samples, n_features), dtype=dtype.
-            - y: Label tensor shape (n_samples,), dtype=torch.int64.
-    """
-    if random_state is None:
-        generator = None
-    elif isinstance(random_state, int):
-        generator = torch.Generator(device=device).manual_seed(random_state)
-    elif isinstance(random_state, torch.Generator):
-        generator = random_state
-    else:
-        raise ValueError("random_state must be None, int, or torch.Generator")
-
-    num_total_clusters = n_classes * n_clusters_per_class
-    samples_per_cluster = n_samples // num_total_clusters
-    n_samples_generated = samples_per_cluster * num_total_clusters # Ensure divisibility
-
-    if n_samples_generated == 0:
-         raise ValueError(f"n_samples ({n_samples}) too small for the number of clusters ({num_total_clusters}).")
-
-
-    X_list = []
-    y_list = []
-
-    # Generate cluster centers (means) somewhat separated
-    # Simple approach: sample from a wider Gaussian and scale by class_sep
-    # A more sophisticated approach might place them more deliberately (like sklearn's hypercube)
-    cluster_means = torch.randn(
-        num_total_clusters, n_features,
-        generator=generator, device=device, dtype=dtype
-    ) * (class_sep * 10) # Scale initial random means for separation
-
-
-    if isinstance(cluster_std, (float, int)):
-        cluster_stds = torch.full((num_total_clusters,), float(cluster_std), device=device, dtype=dtype)
-    elif isinstance(cluster_std, (list, tuple)):
-        if len(cluster_std) != num_total_clusters:
-            raise ValueError("Length of cluster_std must match n_classes * n_clusters_per_class")
-        cluster_stds = torch.tensor(cluster_std, device=device, dtype=dtype)
-    else:
-        raise TypeError("cluster_std must be float, list, or tuple")
-
-
-    current_sample_idx = 0
-    for i in range(num_total_clusters):
-        mean = cluster_means[i]
-        std = cluster_stds[i]
-        n_samples_cluster = samples_per_cluster
-
-        # Handle potential remainder if n_samples wasn't perfectly divisible
-        if i == num_total_clusters - 1:
-            n_samples_cluster += n_samples - n_samples_generated # Add remainder to last cluster
-
-
-        # Sample points for the current cluster
-        cluster_X = mean + std * torch.randn(
-            n_samples_cluster, n_features,
-            generator=generator, device=device, dtype=dtype
-        )
-        X_list.append(cluster_X)
-
-        # Assign class label (integer division maps clusters to classes)
-        class_label = i // n_clusters_per_class
-        cluster_y = torch.full((n_samples_cluster,), class_label, device=device, dtype=torch.int64)
-        y_list.append(cluster_y)
-
-
-    X = torch.cat(X_list, dim=0)
-    y = torch.cat(y_list, dim=0)
-
-    # Apply label noise if requested
-    if label_noise > 0.0:
-        n_flip = int(label_noise * n_samples)
-        if n_flip > 0:
-            flip_indices = torch.randperm(n_samples, generator=generator, device=device)[:n_flip]
-            original_labels = y[flip_indices]
-
-            # Generate new random labels different from the original
-            # Avoid assigning the same label back
-            new_labels = torch.randint(0, n_classes, (n_flip,), generator=generator, device=device, dtype=torch.int64)
-            # Find indices where new label is same as old, and resample until different
-            needs_resample = (new_labels == original_labels)
-            while torch.any(needs_resample):
-                 num_resample = torch.sum(needs_resample).item()
-                 new_labels[needs_resample] = torch.randint(0, n_classes, (num_resample,), generator=generator, device=device, dtype=torch.int64)
-                 needs_resample = (new_labels == original_labels) # Check again
-
-            y[flip_indices] = new_labels
-
-
-    # Shuffle data if requested
-    if shuffle:
-        indices = torch.randperm(n_samples, generator=generator, device=device)
-        X = X[indices]
-        y = y[indices]
-
-    return X, y
-
-# --- Example Usage ---
-n_samples = 500
-n_features = 2
-n_classes = 3
-n_clusters = 2 # Clusters per class
-noise_fraction = 0.0 # 10% label noise
-
-X, y = make_classification_pytorch(
-    n_samples=n_samples,
-    n_features=n_features,
-    n_classes=n_classes,
-    n_clusters_per_class=n_clusters,
-    class_sep=3.0,       # Increase separation
-    cluster_std=10.0,     # Standard deviation within clusters
-    label_noise=noise_fraction,
-    random_state=111,     # For reproducibility
-    device='cpu'         # Or 'cuda' if available
+random_integers = torch.randint(low=1, high=6, size=(30,))
+dataset = MoGSynthetic(
+    batch_size=1024,
+    num_samples=100000,
+    num_features=512,
+    num_classes=30,
+    clusters_per_class=2,
+    base_cluster_std=2.0,
+    
 )
 
-print("Generated data shapes:")
-print("X:", X.shape, X.dtype)
-print("y:", y.shape, y.dtype)
-print("\nExample Labels (first 20):")
-print(y[:20])
-print(f"\nNumber of unique labels: {torch.unique(y).size(0)}")
+# if __name__ == '__main__':
+
+#     # Parameters for dataset generation
+#     N_SAMPLES = 600             # Total number of samples
+#     N_FEATURES = 2              # Must be 2 for 2D visualization
+#     N_CLASSES = 3               # Number of classes
+#     N_CLUSTERS_PER_CLASS = [1, 2, 3]    # Number of clusters within each class (Class 0: 1, Class 1: 2, Class 2: 3)
+#     INTRA_CLASS_SEP = 3.0       # Renamed variable for clarity, matches param intra_class_spread
+#     CLASS_SEP = 0.5
+#     RANDOM_STATE = 5            # Seed for reproducibility
+#     LABEL_NOISE = 0.02          # Add slight noise to test _apply_label_noise
+
+#     # Calculate total clusters AFTER defining N_CLUSTERS_PER_CLASS
+#     try:
+#         num_total_clusters = sum(N_CLUSTERS_PER_CLASS) # Correctly calculate total clusters
+#     except TypeError:
+#         print("Error: N_CLUSTERS_PER_CLASS should be a list or tuple of integers.")
+#         exit()
 
 
-# --- Optional: Visualize if n_features == 2 ---
-if n_features == 2:
-    plt.figure(figsize=(8, 6))
-    scatter = plt.scatter(X[:, 0].cpu().numpy(), X[:, 1].cpu().numpy(), c=y.cpu().numpy(), cmap='viridis', s=15, alpha=0.7)
-    plt.title(f'PyTorch Generated Classification Data ({noise_fraction*100:.0f}% Noise)')
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
-    try:
-        # Create legend handles manually if needed
-        handles, _ = scatter.legend_elements()
-        plt.legend(handles, [f'Class {i}' for i in range(n_classes)], title="Classes")
-    except Exception: # Handle cases where legend elements might fail (e.g., single class)
-        print("Could not generate legend.")
-    plt.grid(True)
-    plt.show()
+#     # Use a list for cluster_std as we have multiple clusters
+#     # Length must match num_total_clusters (1 + 2 + 3 = 6)
+#     CLUSTER_STDS = [0.4, 0.5, 0.7, 0.45, 0.65, 0.8] # Example stds for 6 clusters
+#     if len(CLUSTER_STDS) != num_total_clusters:
+#         print(f"Error: Length of CLUSTER_STDS ({len(CLUSTER_STDS)}) must match the total number of clusters ({num_total_clusters}).")
+#         # Adjust CLUSTER_STDS or N_CLUSTERS_PER_CLASS
+#         # Example fallback: Use a single float value
+#         print("Fallback: Using a single float value (1.0) for cluster_std.")
+#         CLUSTER_STDS = 1.0
+#         # Or exit() if strict matching is required
+
+
+#     datasets = {}
+#     covariance_types = ['isotropic', 'diagonal', 'full']
+
+#     # Generate datasets for each covariance type
+#     for cov_type in covariance_types:
+#         print(f"Generating dataset for covariance_type='{cov_type}'...")
+#         try:
+#             datasets[cov_type] = MoGSyntheticDataset(
+#                 n_samples=N_SAMPLES,
+#                 n_features=N_FEATURES,
+#                 n_classes=N_CLASSES,
+#                 n_clusters_per_class=N_CLUSTERS_PER_CLASS,
+#                 class_sep=CLASS_SEP,  # Adjust separation as needed
+#                 base_cluster_std=CLUSTER_STDS,
+#                 intra_class_spread=INTRA_CLASS_SEP, # Use the correctly named variable
+#                 covariance_type=cov_type,
+#                 label_noise=LABEL_NOISE,
+#                 random_state=RANDOM_STATE
+#             )
+#             print(f" -> Done. Features shape: {datasets[cov_type].features.shape}")
+#         except ValueError as e:
+#             print(f" -> Error generating dataset for {cov_type}: {e}")
+#             # Handle error, maybe skip this cov_type or exit
+#             datasets[cov_type] = None # Mark as failed
+
+
+#     # Visualization
+#     print("\nVisualizing datasets...")
+#     # Filter out failed datasets
+#     valid_cov_types = [ct for ct in covariance_types if datasets.get(ct) is not None]
+#     if not valid_cov_types:
+#          print("No valid datasets generated for visualization.")
+#          exit()
+
+#     fig, axes = plt.subplots(1, len(valid_cov_types), figsize=(6 * len(valid_cov_types), 6), sharex=True, sharey=True)
+#     # Ensure axes is always iterable, even if only one subplot
+#     if len(valid_cov_types) == 1:
+#         axes = [axes]
+
+#     fig.suptitle(f'Synthetic Datasets (N={N_SAMPLES}, K={N_CLASSES}, Clusters/Class={N_CLUSTERS_PER_CLASS})', fontsize=16)
+
+#     # Define colors for classes
+#     colors = plt.cm.viridis(np.linspace(0, 1, N_CLASSES))
+
+#     plot_handles = [] # For custom legend
+#     plot_labels = []  # For custom legend
+
+#     for i, cov_type in enumerate(valid_cov_types):
+#         ax = axes[i]
+#         dataset = datasets[cov_type]
+
+#         # Get data as numpy arrays
+#         X = dataset.features.numpy()
+#         y = dataset.labels.numpy()
+#         means = dataset.cluster_means_.numpy() # Shape: (num_total_clusters, n_features)
+#         # *** FIX: Use the dataset's mapping attribute ***
+#         cluster_to_class_map = dataset.cluster_class_labels_.numpy() # Get the mapping
+
+#         # Plot data points for each class
+#         for k in range(N_CLASSES):
+#             class_mask = (y == k)
+#             scatter = ax.scatter(X[class_mask, 0], X[class_mask, 1],
+#                        color=colors[k],
+#                        # label=f'Class {k}', # Labeling inside loop creates duplicates
+#                        s=10, alpha=0.7, edgecolors='w', linewidth=0.5)
+#             # Store handle only once per class for the legend
+#             if i == 0: # Only take handles from the first plot for the main legend
+#                  plot_handles.append(scatter)
+#                  plot_labels.append(f'Class {k}')
+
+
+#         # Plot cluster means, using the correct class mapping
+#         for cluster_idx in range(dataset.num_total_clusters):
+#              # *** FIX: Get class label from the dataset's mapping ***
+#              class_label = cluster_to_class_map[cluster_idx]
+#              mean_marker = ax.scatter(means[cluster_idx, 0], means[cluster_idx, 1],
+#                         color=colors[class_label], # Use mapped class label for color
+#                         marker='X', s=150, edgecolors='black', linewidth=1.5)
+#              # Add handle for mean marker only once for the legend
+#              if i == 0 and cluster_idx == 0:
+#                   plot_handles.append(mean_marker)
+#                   plot_labels.append('Cluster Mean')
+
+
+#         ax.set_title(f"Covariance: '{cov_type}'")
+#         ax.set_xlabel("Feature 1")
+#         if i == 0:
+#             ax.set_ylabel("Feature 2")
+
+#         ax.grid(True, linestyle='--', alpha=0.5)
+#         # Set aspect ratio to equal to see shape distortion accurately
+#         ax.set_aspect('equal', adjustable='box')
+
+#     # Create a single legend for the entire figure
+#     fig.legend(plot_handles, plot_labels, loc='upper right', bbox_to_anchor=(0.99, 0.95))
+
+#     plt.tight_layout(rect=[0, 0.03, 1, 0.93]) # Adjust layout further for global legend
+#     plt.show()
+
+#     print("\nVisualization complete.")

@@ -15,15 +15,93 @@ import argparse
 import os
 
 
+def train_cnn5_mnist(outputs_dir: Path):
+    max_epochs = 230
+    batch_size = 1024
+    label_noise = 0.1
+    num_kernels_k = 128
+    use_amp = True
+    seed = 22
+    max_gradient_steps=max_epochs * (60000 // batch_size)
+    log_comet = True
+    
+    optim_cgf = {
+        "type": "sgd",
+        "lr": 1e-1,
+        "momentum": 0.0
+    }
+    lr_schedule_cfg = {
+        "type": "isqrt",
+        "L": 512,
+    }
+    
+    augmentations = [
+        transformsv2.RandomCrop(32, padding=4),
+        transformsv2.RandomHorizontalFlip()
+    ]
+    
+    dataset = MNIST(
+        batch_size=batch_size,
+        img_size=(32, 32), # So it matches the configuration of the CNN5 network.
+        num_workers=8,
+        label_noise=label_noise,
+        augmentations=augmentations,
+        valset_ratio=0.0,
+        normalize_imgs=False,
+        flatten=False,
+        seed=seed,
+    )
+    
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
+    
+    model = CNN5(
+        num_channels=num_kernels_k,
+        num_classes=10,
+        gray_scale=True,
+        loss_fn=loss_fn,
+        metric=acc_metric
+    )
+    
+    experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+    experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
+    experiment_name += '|AMP' if use_amp else 'noAMP'
+    if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
+    experiment_tags = experiment_name.split('_')
+    
+    early_stopping = False 
+    trainer = TrainerGS(
+        outputs_dir=outputs_dir,
+        max_gradient_steps=max_gradient_steps,
+        optimizer_cfg=optim_cgf,
+        lr_schedule_cfg=lr_schedule_cfg,
+        early_stopping=early_stopping,
+        validation_freq=1, # Epoch
+        save_best_model=True,
+        run_on_gpu=True,
+        use_amp=use_amp,
+        log_comet=log_comet,
+        comet_project_name='doubledescent-epochwise',
+        exp_name=experiment_name,
+        exp_tags=experiment_tags,
+        seed=seed
+    )
+
+    results = trainer.fit(model, dataset, resume=False)
+    print('results:', results)
+
 
 
 def train_cnn5_cifar10(outputs_dir: Path):
     
-    max_epochs = 30
-    batch_size = 128
+    max_epochs = 2000
+    batch_size = 1024
     label_noise = 0.0
+    num_kernels_k = 128
+    use_amp = True
     seed = 22
-    max_gradient_steps=max_epochs * (50000 // 128)
+    max_gradient_steps=max_epochs * (50000 // batch_size)
+    log_comet = True
     
     optim_cgf = {
         "type": "sgd",
@@ -55,18 +133,19 @@ def train_cnn5_cifar10(outputs_dir: Path):
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
-    param = 128
     model = CNN5(
-        num_channels=param,
+        num_channels=num_kernels_k,
         num_classes=10,
         loss_fn=loss_fn,
         metric=acc_metric
     )
     
     experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
-    experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|AMP"
+    experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
+    experiment_name += '|AMP' if use_amp else 'noAMP'
     if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
     experiment_tags = experiment_name.split('_')
+    
 
     early_stopping = False 
     trainer = TrainerGS(
@@ -76,10 +155,10 @@ def train_cnn5_cifar10(outputs_dir: Path):
         lr_schedule_cfg=lr_schedule_cfg,
         early_stopping=early_stopping,
         validation_freq=1, # Epoch
-        save_best_model=False,
+        save_best_model=True,
         run_on_gpu=True,
-        use_amp=True,
-        log_comet=True,
+        use_amp=use_amp,
+        log_comet=log_comet,
         comet_project_name='doubledescent-epochwise',
         exp_name=experiment_name,
         exp_tags=experiment_tags,
@@ -168,7 +247,26 @@ def train_resnet18k_cifar10(outputs_dir: Path):
     )
 
 
+def train_fc1_mog(outputs_dir: Path):
+    max_epochs = 300
+    batch_size = 1024
+    label_noise = 0.0
+    hidden_size = 256
+    seed = 22
+    max_epochs = 1000
+    log_comet = True
 
+    optim_cgf = {
+        'type': 'adam',
+        'lr': 1e-4,
+        'betas': (0.9, 0.999)
+    }
+    
+    lr_schedule_cfg = None
+    
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=50)
+    
 
 if __name__ == "__main__":
 
@@ -207,7 +305,7 @@ if __name__ == "__main__":
         ...
         # train_fc1_cifar10(results_dir, checkpoints_dir, log_dir)
     elif args.model == 'cnn5' and args.dataset == "mnist":
-        ...
+        train_cnn5_mnist(outputs_dir)
     elif args.model == 'cnn5' and args.dataset == 'cifar10':
         train_cnn5_cifar10(outputs_dir)
     elif args.model == 'resnet18' and args.dataset == 'cifar10':

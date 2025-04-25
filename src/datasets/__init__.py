@@ -1,3 +1,4 @@
-from .CIFAR10 import CIFAR10
-from .MNIST import MNIST
-from .FashionMNIST import FashionMNIST
+from .cifar10 import CIFAR10
+from .mnist import MNIST
+from .fashion_mnist import FashionMNIST
+from .mog_synthetic import MoGSynthetic, MoGSyntheticDataset
