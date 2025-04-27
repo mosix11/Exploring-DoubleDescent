@@ -7,17 +7,32 @@ from src.datasets import MoGSyntheticDataset, MoGSynthetic
 
 seed = 10
 
-random_integers = torch.randint(low=1, high=6, size=(30,))
 dataset = MoGSynthetic(
     batch_size=1024,
     num_samples=100000,
     num_features=512,
     num_classes=30,
-    clusters_per_class=2,
-    base_cluster_std=2.0,
-    
+    clusters_per_class='random',
+    base_cluster_std='random',
+    covariance_type='full',
+    class_sep=2.0,
+    intra_class_spread=1.0,
+    train_val_test_ratio=[0.7, 0.0, 0.3],
+    num_workers=2,
+    seed=seed
 )
 
+trdl = dataset.get_train_dataloader()
+tsdl = dataset.get_test_dataloader()
+
+
+for batch in trdl:
+    # print(len(batch))
+    # print(batch[0].shape)
+    # print(batch[1].shape)
+    print(torch.norm(batch[0][0]))
+
+    
 # if __name__ == '__main__':
 
 #     # Parameters for dataset generation

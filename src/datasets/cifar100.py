@@ -109,7 +109,10 @@ class CIFAR100:
         noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
 
         # Get the original labels
-        original_labels = dataset.targets.clone().detach()
+        if isinstance(dataset, Subset):
+            original_labels = dataset.dataset.targets[dataset.indices].clone().detach()
+        else:
+            original_labels = dataset.targets.clone().detach()
 
         # Generate random incorrect labels
         random_labels = torch.randint(0, num_classes, (num_samples,), generator=self.generator)
@@ -128,6 +131,38 @@ class CIFAR100:
         dataset.targets = noisy_labels.tolist()
         return dataset
 
+    def _apply_label_noise(self, dataset):
+        num_samples = len(dataset)
+        num_classes = len(self.class_subset) if self.class_subset else 10
+
+        # Generate random numbers to decide which labels to flip
+        noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
+
+        # Get the original labels
+        if isinstance(dataset, Subset):
+            original_labels = dataset.dataset.targets[dataset.indices].clone().detach()
+        else:
+            original_labels = dataset.targets.clone().detach()
+
+        # Generate random incorrect labels
+        random_labels = torch.randint(0, num_classes, (num_samples,), generator=self.generator)
+
+        # Ensure the random labels are different from the original labels
+        incorrect_mask = (random_labels == original_labels)
+        while incorrect_mask.any():
+            new_random_labels = torch.randint(0, num_classes, (incorrect_mask.sum(),), generator=self.generator)
+            random_labels[incorrect_mask] = new_random_labels
+            incorrect_mask = (random_labels == original_labels)
+
+        # Apply the noise to the targets
+        noisy_labels = torch.where(noise_mask, random_labels, original_labels)
+
+        # Update the dataset targets
+        if isinstance(dataset, Subset):
+            dataset.dataset.targets = noisy_labels.tolist()
+        else:
+            dataset.targets = noisy_labels.tolist()
+        return dataset
 
     def get_train_dataloader(self):
         return self.train_loader
@@ -193,7 +228,7 @@ class CIFAR100:
         testset = test_dataset
             
         if self.label_noise > 0.0:
-            train_dataset = self._apply_label_noise(train_dataset)
+            trainset = self._apply_label_noise(trainset)
             
         if self.class_subset != None and len(self.class_subset) >= 1:
             mapping = {orig: new for new, orig in enumerate(self.class_subset)}

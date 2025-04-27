@@ -141,24 +141,24 @@ class TrainerEp:
             self.model.to(self.gpu)
 
     def configure_optimizers(self, optim_state_dict=None, last_epoch=-1, last_gradient_step=-1):
+        optim_cfg = copy.deepcopy(self.optimizer_cfg)
+        del optim_cfg['type']
         if self.optimizer_cfg['type'] == "adamw":
+            
             optim = AdamW(
                 params=self.model.parameters(),
-                lr=self.optimizer_cfg['lr'],
-                betas=self.optimizer_cfg['betas']
+                **optim_cfg
             )
 
         elif self.optimizer_cfg['type'] == "adam":
             optim = Adam(
                 params=self.model.parameters(),
-                lr=self.optimizer_cfg['lr'],
-                betas=self.optimizer_cfg['betas']
+                **optim_cfg
             )
         elif self.optimizer_cfg['type'] == "sgd":
             optim = SGD(
                 params=self.model.parameters(),
-                lr=self.optimizer_cfg['lr'],
-                momentum=self.optimizer_cfg['momentum']
+                **optim_cfg
             )
         else:
             raise RuntimeError("Invalide optimizer type")
@@ -167,32 +167,30 @@ class TrainerEp:
         
 
         if self.lr_schedule_cfg:
+            lr_sch_cfg = copy.deepcopy(self.lr_schedule_cfg)
+            del lr_sch_cfg['type']
             if self.lr_schedule_cfg['type'] == 'step':
                 self.lr_scheduler = MultiStepLR(
                     optim,
-                    milestones=self.lr_schedule_cfg['milestones'],
-                    gamma=self.lr_schedule_cfg['gamma'],
+                    **lr_sch_cfg,
                     last_epoch=last_epoch
                 )
                 
             elif self.lr_schedule_cfg['type'] == 'isqrt':
                 self.lr_scheduler = InverseSquareRootLR(
                     optim,
-                    L=self.lr_schedule_cfg['L'],
+                    **lr_sch_cfg,
                     last_epoch=last_gradient_step
                 )
             elif self.lr_schedule_cfg['type'] == 'plat':
                 self.lr_scheduler = ReduceLROnPlateau(
                     optim,
-                    mode=self.lr_schedule_cfg['mode'],
-                    factor=self.lr_schedule_cfg['factor'],
-                    patience=self.lr_schedule_cfg['patience'],
+                    **lr_sch_cfg,
                 )
             elif self.lr_schedule_cfg['type'] == 'cosann':
                 self.lr_schedule_cfg = CosineAnnealingLR(
                     optim,
-                    T_max=self.lr_schedule_cfg['T_max'],
-                    eta_min=self.lr_schedule_cfg['eta_min'],
+                    **lr_sch_cfg,
                     last_epoch=last_epoch
                 )
         else: self.lr_scheduler = None
@@ -345,7 +343,7 @@ class TrainerEp:
                 statistics['Test/Loss'] = res['loss']
                 statistics['Test/ACC'] = res['acc']
                 if self.save_best_model:
-                    if self.best_model_perf['Test/ACC'] < statistics['Test/ACC']:
+                    if self.best_model_perf['Test/Loss'] > statistics['Test/Loss']:
                         self.best_model_perf = copy.deepcopy(statistics)
                         self.best_model_perf['epoch'] = self.epoch
                         ckp_path = self.checkpoint_dir / Path('best_ckp.pth')
@@ -399,6 +397,8 @@ class TrainerEp:
         }
         if self.log_comet:
             save_dict['exp_key'] = self.comet_experiment.get_key()
+        if self.save_best_model:
+            save_dict['best_prf'] = self.best_model_perf
         torch.save(save_dict, path)
         
     def load_full_checkpoint(self, path):
@@ -410,3 +410,6 @@ class TrainerEp:
         self.epoch = checkpoint["epoch"]
         if self.log_comet:
             self.configure_logger(checkpoint["exp_key"])
+            
+        if 'best_prf' in checkpoint:
+            self.best_model_perf = checkpoint['best_prf']

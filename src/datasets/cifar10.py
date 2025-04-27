@@ -125,7 +125,10 @@ class CIFAR10:
         noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
 
         # Get the original labels
-        original_labels = dataset.targets.clone().detach()
+        if isinstance(dataset, Subset):
+            original_labels = dataset.dataset.targets[dataset.indices].clone().detach()
+        else:
+            original_labels = dataset.targets.clone().detach()
 
         # Generate random incorrect labels
         random_labels = torch.randint(0, num_classes, (num_samples,), generator=self.generator)
@@ -141,7 +144,10 @@ class CIFAR10:
         noisy_labels = torch.where(noise_mask, random_labels, original_labels)
 
         # Update the dataset targets
-        dataset.targets = noisy_labels.tolist()
+        if isinstance(dataset, Subset):
+            dataset.dataset.targets = noisy_labels.tolist()
+        else:
+            dataset.targets = noisy_labels.tolist()
         return dataset
 
 
@@ -194,7 +200,7 @@ class CIFAR10:
         testset = test_dataset
             
         if self.label_noise > 0.0:
-            train_dataset = self._apply_label_noise(train_dataset)
+            trainset = self._apply_label_noise(trainset)
             
         if self.class_subset != None and len(self.class_subset) >= 1:
             
