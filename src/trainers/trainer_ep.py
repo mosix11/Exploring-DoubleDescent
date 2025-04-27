@@ -49,6 +49,7 @@ class TrainerEp:
         comet_project_name: str = None,
         exp_name: str = None,
         exp_tags: List[str] = None,
+        model_log_call: bool = False,
         seed: int = None
     ):
         outputs_dir.mkdir(exist_ok=True)
@@ -112,7 +113,7 @@ class TrainerEp:
         self.exp_tags = exp_tags
         if log_comet and comet_project_name is None:
             raise RuntimeError('When CometML logging is active, the `comet_project_name` must be specified.')
-
+        self.model_log_call = model_log_call
             
 
         
@@ -314,7 +315,6 @@ class TrainerEp:
                 
             epoch_train_loss.update(loss.detach().cpu().item(), n=input_batch.shape[0])
             epoch_train_acc.update(metric.detach().cpu().item(), input_batch.shape[0])
-            
         if self.lr_scheduler:
             self.lr_scheduler.step()
             
@@ -343,7 +343,7 @@ class TrainerEp:
                 statistics['Test/Loss'] = res['loss']
                 statistics['Test/ACC'] = res['acc']
                 if self.save_best_model:
-                    if self.best_model_perf['Test/Loss'] > statistics['Test/Loss']:
+                    if self.best_model_perf['Test/ACC'] < statistics['Test/ACC']:
                         self.best_model_perf = copy.deepcopy(statistics)
                         self.best_model_perf['epoch'] = self.epoch
                         ckp_path = self.checkpoint_dir / Path('best_ckp.pth')
@@ -353,6 +353,9 @@ class TrainerEp:
             ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
             self.save_full_checkpoint(ckp_path)
                 
+        if self.model_log_call:
+            model_logs = self.model.log_stats()
+            statistics.update(model_logs)
         if self.log_comet:
             self.comet_experiment.log_metrics(statistics, step=self.epoch)
 

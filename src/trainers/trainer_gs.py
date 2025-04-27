@@ -47,6 +47,7 @@ class TrainerGS:
         comet_project_name: str = None,
         exp_name: str = None,
         exp_tags: List[str] = None,
+        model_log_call: bool = False,
         seed: int = None
     ):
         
@@ -311,7 +312,7 @@ class TrainerGS:
                 statistics['Test/Loss'] = res['loss']
                 statistics['Test/ACC'] = res['acc']
                 if self.save_best_model:
-                    if self.best_model_perf['Test/Loss'] > statistics['Test/Loss']:
+                    if self.best_model_perf['Test/ACC'] < statistics['Test/ACC']:
                         self.best_model_perf = copy.deepcopy(statistics)
                         self.best_model_perf['epoch'] = self.epoch
                         self.best_model_perf['gstep'] = self.g_step
@@ -322,6 +323,9 @@ class TrainerGS:
                 ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
                 self.save_full_checkpoint(ckp_path)
                     
+            if self.model_log_call:
+                model_logs = self.model.log_stats()
+                statistics.update(model_logs)
             if self.log_comet:
                 # self.comet_experiment.log_metrics(statistics, step=self.g_step ,epoch=self.epoch)
                 self.comet_experiment.log_metrics(statistics, step=self.epoch)

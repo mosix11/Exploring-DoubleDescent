@@ -386,14 +386,14 @@ def train_cnn5_cifar10(outputs_dir: Path):
 
 
 def train_fc1_mog(outputs_dir: Path):
-    max_epochs = 10
+    max_epochs = 1000
     num_samples = 100000
     batch_size = 1024
     num_features = 512
     num_classes = 30
     label_noise = 0.2
     seed = 22
-    log_comet = False
+    log_comet = True
     
     param_range = [
         1,
@@ -487,7 +487,7 @@ def train_fc1_mog(outputs_dir: Path):
             metric=acc_metric,
         )
     
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}" + "_wr"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -495,7 +495,7 @@ def train_fc1_mog(outputs_dir: Path):
         if idx > 0:
             old_ckp_path = outputs_dir / Path(prev_exp_name) / Path('checkpoint/best_ckp.pth')
             old_state = torch.load(old_ckp_path)['model_state']
-            model.reuse_weights_and_freeze(old_state)
+            model.reuse_weights(old_state)
         
         trainer = TrainerEp(
             outputs_dir=outputs_dir,
@@ -514,6 +514,7 @@ def train_fc1_mog(outputs_dir: Path):
             comet_project_name='doubledescent-modelwise-fc-mog-weight-reuse',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
+            # model_log_call=True,
             seed=seed
         )
         results = trainer.fit(model, dataset, resume=False)

@@ -157,65 +157,65 @@ class FC1(nn.Module):
         self._freeze_handles = []
 
 
-    def log_params_stats(self):
+    def log_stats(self):
         """
-        Prints the mean and standard deviation of the reused and non-reused weights and biases.
-        """
-        print("--- Statistics of Parameters ---")
+        Calculates and returns a dictionary containing the mean and standard deviation
+        of the reused and non-reused weights and biases.
 
+        Returns:
+            dict: A dictionary where keys are parameter names (e.g., 'h1.weight_reused_mean')
+                  and values are the corresponding statistics.
+        """
+    
+        stats = {}
         # Statistics for h1 weights
         if hasattr(self, 'reused_h1_weight'):
             reused_h1_weights = self.h1.weight.data[self.reused_h1_weight]
             non_reused_h1_weights = self.h1.weight.data[~self.reused_h1_weight]
-            torch.numel
             if reused_h1_weights.numel() > 0:
-                print(f"h1.weight - Reused: Mean={reused_h1_weights.mean().item():.4f}, Std={reused_h1_weights.std().item():.4f}")
-            else:
-                print("h1.weight - No reused weights.")
+                stats['h1.weight_reused_mean'] = reused_h1_weights.mean().item()
+                stats['h1.weight_reused_std'] = reused_h1_weights.std().item()
             if non_reused_h1_weights.numel() > 0:
-                print(f"h1.weight - Non-reused: Mean={non_reused_h1_weights.mean().item():.4f}, Std={non_reused_h1_weights.std().item():.4f}")
-            else:
-                print("h1.weight - No non-reused weights.")
+                stats['h1.weight_non_reused_mean'] = non_reused_h1_weights.mean().item()
+                stats['h1.weight_non_reused_std'] = non_reused_h1_weights.std().item()
+
 
         # Statistics for h1 bias
         if hasattr(self, 'reused_h1_bias'):
             reused_h1_bias = self.h1.bias.data[self.reused_h1_bias]
             non_reused_h1_bias = self.h1.bias.data[~self.reused_h1_bias]
             if reused_h1_bias.numel() > 0:
-                print(f"h1.bias - Reused: Mean={reused_h1_bias.mean().item():.4f}, Std={reused_h1_bias.std().item():.4f}")
-            else:
-                print("h1.bias - No reused biases.")
+                stats['h1.bias_reused_mean'] = reused_h1_bias.mean().item()
+                stats['h1.bias_reused_std'] = reused_h1_bias.std().item()
             if non_reused_h1_bias.numel() > 0:
-                print(f"h1.bias - Non-reused: Mean={non_reused_h1_bias.mean().item():.4f}, Std={non_reused_h1_bias.std().item():.4f}")
-            else:
-                print("h1.bias - No non-reused biases.")
+                stats['h1.bias_non_reused_mean'] = non_reused_h1_bias.mean().item()
+                stats['h1.bias_non_reused_std'] = non_reused_h1_bias.std().item()
+
 
         # Statistics for out weights
         if hasattr(self, 'reused_out_weight'):
             reused_out_weights = self.out.weight.data[self.reused_out_weight]
             non_reused_out_weights = self.out.weight.data[~self.reused_out_weight]
             if reused_out_weights.numel() > 0:
-                print(f"out.weight - Reused: Mean={reused_out_weights.mean().item():.4f}, Std={reused_out_weights.std().item():.4f}")
-            else:
-                print("out.weight - No reused weights.")
+                stats['out.weight_reused_mean'] = reused_out_weights.mean().item()
+                stats['out.weight_reused_std'] = reused_out_weights.std().item()
             if non_reused_out_weights.numel() > 0:
-                print(f"out.weight - Non-reused: Mean={non_reused_out_weights.mean().item():.4f}, Std={non_reused_out_weights.std().item():.4f}")
-            else:
-                print("out.weight - No non-reused weights.")
+                stats['out.weight_non_reused_mean'] = non_reused_out_weights.mean().item()
+                stats['out.weight_non_reused_std'] = non_reused_out_weights.std().item()
+
 
         # Statistics for out bias
         if hasattr(self, 'reused_out_bias'):
             reused_out_bias = self.out.bias.data[self.reused_out_bias]
             non_reused_out_bias = self.out.bias.data[~self.reused_out_bias]
             if reused_out_bias.numel() > 0:
-                print(f"out.bias - Reused: Mean={reused_out_bias.mean().item():.4f}, Std={reused_out_bias.std().item():.4f}")
-            else:
-                print("out.bias - No reused biases.")
+                stats['out.bias_reused_mean'] = reused_out_bias.mean().item()
+                stats['out.bias_reused_std'] = reused_out_bias.std().item()
             if non_reused_out_bias.numel() > 0:
-                print(f"out.bias - Non-reused: Mean={non_reused_out_bias.mean().item():.4f}, Std={non_reused_out_bias.std().item():.4f}")
-            else:
-                print("out.bias - No non-reused biases.")
-        
+                stats['out.bias_non_reused_mean'] = non_reused_out_bias.mean().item()
+                stats['out.bias_non_reused_std'] = non_reused_out_bias.std().item()
+
+        return stats
 
 
     def training_step(self, x, y, use_amp=False):        
