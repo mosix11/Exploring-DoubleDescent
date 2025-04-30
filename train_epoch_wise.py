@@ -248,11 +248,12 @@ def train_resnet18k_cifar10(outputs_dir: Path):
 
 
 def train_fc1_mog(outputs_dir: Path):
-    max_epochs = 1000
-    batch_size = 1024
+    max_epochs = 20000
+    batch_size = 4096
+    num_samples = 100000
     num_features = 512
     num_classes = 30
-    hidden_size = 512
+    hidden_size = 32818
     label_noise = 0.2
 
     max_gradient_steps = max_epochs * (100000 // batch_size)
@@ -282,7 +283,7 @@ def train_fc1_mog(outputs_dir: Path):
     
     dataset = MoGSynthetic(
         batch_size=batch_size,
-        num_samples=100000,
+        num_samples=num_samples,
         num_features=num_features,
         num_classes=num_classes,
         clusters_per_class='random',
@@ -322,7 +323,7 @@ def train_fc1_mog(outputs_dir: Path):
         early_stopping=early_stopping,
         validation_freq=1,
         checkpoint_freq=1,
-        save_best_model=False,
+        save_best_model=True,
         run_on_gpu=True,
         use_amp=False,
         batch_prog=False,

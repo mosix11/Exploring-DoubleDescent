@@ -667,14 +667,14 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
 def train_fc1_mog_parallel(outputs_dir: Path):
     max_epochs = 1000
     num_samples = 100000
-    batch_size = 1024
+    batch_size = 2048
     num_features = 512
     num_classes = 30
     label_noise = 0.2
     seed = 22
     
-    gpu_per_experiment:float = 0.1
-    cpu_per_experiment:float = 1
+    gpu_per_experiment:float = 0.2
+    cpu_per_experiment:float = 2
     
     
     param_range = [
@@ -766,7 +766,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
     
-    experiment = f"FC1_MoG(smpls{num_samples}+ftrs{num_features}+cls{num_classes}+{label_noise}Noise)_Parallel_Seed{seed}"
+    experiment = f"FC1_MoG(smpls{num_samples}+ftrs{num_features}+cls{num_classes}+{label_noise}Noise)_Parallel_B4096_Seed{seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -819,7 +819,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
             batch_prog=False,
             log_comet=True,
             comet_api_key=os.getenv('COMET_API_KEY'),
-            comet_project_name='doubledescent-modelwise-fc-mog-weight-reuse',
+            comet_project_name='doubledescent-modelwise-fc-mog-parallel-b4096',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
             seed=seed
