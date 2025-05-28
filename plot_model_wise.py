@@ -89,6 +89,8 @@ import math # To help determine subplot grid
 # --- Configuration ---
 base_path_reuse = 'outputs/modelwise/FC1_MoG(smpls100000+ftrs512+cls30+0.2Noise)_WeightReuse_Seed22'
 base_path_parallel = 'outputs/modelwise/FC1_MoG(smpls100000+ftrs512+cls30+0.2Noise)_Parallel_Seed22'
+base_path_reuse_freeze = 'outputs/modelwise/FC1_MoG(smpls100000+ftrs512+cls30+0.2Noise)_WeightReuseFreeze_Seed22'
+
 dir_pattern = re.compile(r"fc1\|h(\d+)_mog")
 json_rel_path = 'log/results.json'
 
@@ -104,20 +106,8 @@ metrics_to_plot = {
     "Best Test ACC": ("best", "Test/ACC"),
 }
 
-# --- Function to load results (same as before) ---
+# --- Function to load results ---
 def load_experiment_results(base_path, pattern, json_path):
-    """
-    Loads results from JSON files in directories matching the pattern.
-
-    Args:
-        base_path (str): The root directory for the experiment.
-        pattern (re.Pattern): Compiled regex pattern to match subdirectories.
-        json_path (str): Relative path to the JSON file within subdirectories.
-
-    Returns:
-        dict: A dictionary mapping the extracted integer (h) to the loaded JSON data.
-              Returns None for h if JSON loading fails.
-    """
     results = {}
     if not os.path.isdir(base_path):
         print(f"Warning: Base directory not found: {base_path}")
@@ -139,20 +129,12 @@ def load_experiment_results(base_path, pattern, json_path):
                                 results[h_value] = data
                             except json.JSONDecodeError:
                                 print(f"Warning: Could not decode JSON in {full_json_path}")
-                                results[h_value] = None # Mark as failed load
+                                results[h_value] = None
                     else:
                         print(f"Warning: JSON file not found: {full_json_path}")
-                        results[h_value] = None # Mark as missing file
-
-                except ValueError:
-                    print(f"Warning: Could not parse integer from directory name {item_name}")
+                        results[h_value] = None
                 except Exception as e:
-                     print(f"Warning: An unexpected error occurred processing {item_path}: {e}")
-                     # Attempt to store None even if h_value wasn't parsed correctly, maybe less ideal
-                     # results[h_value] = None # Mark generic error - h_value might not be defined
-                     pass # Or just skip this problematic directory
-
-
+                    print(f"Warning: Skipping {item_path} due to error: {e}")
     return results
 
 # --- Load Data ---
@@ -164,96 +146,84 @@ print("\nLoading Parallel results...")
 results_parallel = load_experiment_results(base_path_parallel, dir_pattern, json_rel_path)
 print(f"Found {len(results_parallel)} potential results for Parallel.")
 
-# --- Prepare Data for Plotting ---
+print("\nLoading WeightReuse+Freeze results...")
+results_reuse_freeze = load_experiment_results(base_path_reuse_freeze, dir_pattern, json_rel_path)
+print(f"Found {len(results_reuse_freeze)} potential results for WeightReuse+Freeze.")
+
+# --- Prepare Data ---
 valid_reuse_h = set(h for h, data in results_reuse.items() if data is not None)
 valid_parallel_h = set(h for h, data in results_parallel.items() if data is not None)
-common_h = sorted(list(valid_reuse_h & valid_parallel_h))
-
+valid_freeze_h = set(h for h, data in results_reuse_freeze.items() if data is not None)
+common_h = sorted(list(valid_reuse_h & valid_parallel_h & valid_freeze_h))
 
 if not common_h:
-    print("\nError: No common 'h' values found with valid results for both experiments. Cannot generate plots.")
+    print("\nError: No common 'h' values found across all three experiments. Cannot generate plots.")
 else:
-    print(f"\nFound {len(common_h)} common 'h' values with valid results: {common_h}")
+    print(f"\nFound {len(common_h)} common 'h' values: {common_h}")
 
     plot_data = {}
-    metrics_with_data = [] # Keep track of metrics we actually have data for
+    metrics_with_data = []
 
     for metric_name, (json_key1, json_key2) in metrics_to_plot.items():
         current_metric_data = {
             'h': [],
             'reuse': [],
-            'parallel': []
+            'parallel': [],
+            'freeze': []
         }
         valid_points_for_metric = 0
         for h in common_h:
             try:
-                # Double check data exists for this specific h and metric
                 reuse_val = results_reuse[h][json_key1][json_key2]
                 parallel_val = results_parallel[h][json_key1][json_key2]
+                freeze_val = results_reuse_freeze[h][json_key1][json_key2]
 
-                # Ensure values are numeric (or skip)
-                if isinstance(reuse_val, (int, float)) and isinstance(parallel_val, (int, float)):
+                if all(isinstance(val, (int, float)) for val in [reuse_val, parallel_val, freeze_val]):
                     current_metric_data['h'].append(h)
                     current_metric_data['reuse'].append(reuse_val)
                     current_metric_data['parallel'].append(parallel_val)
+                    current_metric_data['freeze'].append(freeze_val)
                     valid_points_for_metric += 1
                 else:
-                     print(f"Warning: Skipping h={h} for metric '{metric_name}'. Non-numeric data found.")
-
-            except (KeyError, TypeError) as e:
-                # This h value is skipped for this metric if data is missing/malformed
-                # print(f"Debug: Skipping h={h} for metric '{metric_name}'. Error: {e}") # Optional debug print
-                pass # Silently skip if keys don't exist for this h
+                    print(f"Warning: Non-numeric value found for h={h} in metric '{metric_name}'")
+            except (KeyError, TypeError):
+                pass
 
         if valid_points_for_metric > 0:
-             plot_data[metric_name] = current_metric_data
-             metrics_with_data.append(metric_name)
+            plot_data[metric_name] = current_metric_data
+            metrics_with_data.append(metric_name)
         else:
-            print(f"Warning: No valid comparable data points found for metric '{metric_name}'. It will not be plotted.")
+            print(f"Warning: No valid data points for metric '{metric_name}'. Skipping it.")
 
-
-    # --- Generate Combined Plot with Subplots ---
-    num_metrics_to_plot = len(metrics_with_data)
-    if num_metrics_to_plot > 0:
-        print(f"\nGenerating combined plot for {num_metrics_to_plot} metrics...")
-
-        # Determine grid size (aim for 2 columns)
+    # --- Plot ---
+    num_metrics = len(metrics_with_data)
+    if num_metrics > 0:
+        print(f"\nGenerating combined plot for {num_metrics} metrics...")
         ncols = 2
-        nrows = math.ceil(num_metrics_to_plot / ncols)
+        nrows = math.ceil(num_metrics / ncols)
 
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), squeeze=False) # Adjust figsize as needed
-        axes = axes.flatten() # Flatten the 2D array of axes for easy iteration
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 4 * nrows), squeeze=False)
+        axes = axes.flatten()
 
-        plot_index = 0
-        for metric_name in metrics_with_data: # Iterate only through metrics that have data
-            if plot_index >= len(axes): # Should not happen with ceil, but safety check
-                 break
-
-            ax = axes[plot_index]
+        for idx, metric_name in enumerate(metrics_with_data):
+            ax = axes[idx]
             data = plot_data[metric_name]
-
             ax.plot(data['h'], data['parallel'], marker='o', linestyle='-', label='Random Init')
             ax.plot(data['h'], data['reuse'], marker='x', linestyle='--', label='WeightReuse')
+            ax.plot(data['h'], data['freeze'], marker='s', linestyle='-.', label='WeightReuse+Freeze')
 
-            ax.set_xscale('log') # Use log scale for h axis
+            ax.set_xscale('log')
             ax.set_xlabel('Hidden Dimension (h)')
-            # Extract last part of metric name (Loss or ACC) for Y label
-            y_label = metric_name.split()[-1] if ' ' in metric_name else metric_name
-            ax.set_ylabel(y_label)
-            ax.set_title(metric_name) # Use the full metric name as title
+            ax.set_ylabel(metric_name.split()[-1])
+            ax.set_title(metric_name)
+            ax.grid(True, which="both", ls="--", alpha=0.6)
             ax.legend()
-            ax.grid(True, which="both", ls="--", alpha=0.6) # Add grid
 
-            plot_index += 1
-
-        # Turn off any unused subplots if the number of metrics isn't a perfect multiple of ncols
-        for i in range(plot_index, len(axes)):
+        for i in range(num_metrics, len(axes)):
             axes[i].axis('off')
 
-        plt.tight_layout() # Adjust layout to prevent overlap
+        plt.tight_layout()
         print("\nDisplaying combined plot...")
         plt.show()
-        print("Done.")
-
     else:
-        print("\nError: No metrics had valid data points across common 'h' values. No plot generated.")
+        print("\nError: No valid metrics with data to plot.")

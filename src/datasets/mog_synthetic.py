@@ -403,6 +403,7 @@ class MoGSynthetic:
         # Generate random numbers to decide which labels to flip
         noise_mask = torch.rand(num_samples, generator=self.generator) < self.label_noise
 
+
         # Get the original labels
         # original_labels = dataset.labels.clone().detach()
         if isinstance(dataset, Subset):
@@ -432,9 +433,13 @@ class MoGSynthetic:
         if isinstance(dataset, Subset):
             # Assign noisy labels to the original dataset's targets at the Subset indices
             dataset.dataset.labels[dataset.indices] = noisy_labels
+            if not hasattr(dataset.dataset, 'is_noisy'):
+                dataset.dataset.is_noisy = torch.zeros(len(dataset.dataset.labels), dtype=torch.bool)
+            dataset.dataset.is_noisy[dataset.indices] = noise_mask
         else:
             # Directly update the dataset's targets (avoids converting to list)
             dataset.labels = noisy_labels
+            dataset.is_noisy = noise_mask
 
         return dataset
     
@@ -455,19 +460,31 @@ class MoGSynthetic:
         feature_std = train_features.std(dim=0) + 1e-8 
         
         class NormalizedDataset(Dataset):
-            def __init__(self, set, feature_mean, feature_std):
+            def __init__(self, set, feature_mean, feature_std, is_noisy=False):
                 self.set = set
                 self.feature_mean = feature_mean
                 self.feature_std = feature_std
+                self.is_noisy = is_noisy
                 
             def __getitem__(self, idx):
                 x, y = self.set[idx]
-                return (x - self.feature_mean) / self.feature_std, y
+                normalized_x = (x - self.feature_mean) / self.feature_std
+
+                # Get the is_noisy flag
+                if self.is_noisy:
+                    # For training set, retrieve the specific is_noisy flag for the current sample
+                    original_idx = self.set.indices[idx] if isinstance(self.set, Subset) else idx
+                    is_noisy_flag = self.set.dataset.is_noisy[original_idx]
+                else:
+                    # For validation/test sets, or if 'is_noisy' not present, it's always False
+                    is_noisy_flag = torch.tensor(False, dtype=torch.bool)
+
+                return normalized_x, y, is_noisy_flag
                 
             def __len__(self):
                 return len(self.set)
         
-        trainset = NormalizedDataset(trainset, feature_mean, feature_std)
+        trainset = NormalizedDataset(trainset, feature_mean, feature_std, is_noisy=True if self.label_noise > 0.0 else False)
         valset = NormalizedDataset(valset, feature_mean, feature_std) if valset else None
         testset = NormalizedDataset(testset, feature_mean, feature_std)
 
@@ -487,3 +504,6 @@ class MoGSynthetic:
             generator=self.generator
         )
         return dataloader
+    
+    
+    

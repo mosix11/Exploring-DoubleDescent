@@ -25,7 +25,8 @@ def train_fc1_mnist(outputs_dir: Path):
     subsample_size = (4000,1000) # Train and Test
     batch_size = 256
     label_noise = 0.0
-    seed = 11
+    training_seed = 11
+    dataset_seed = 11
     param_range = [
         3,
         4,
@@ -75,13 +76,13 @@ def train_fc1_mnist(outputs_dir: Path):
         valset_ratio=0.0,
         normalize_imgs=False,
         flatten=True,
-        seed=seed,
+        seed=dataset_seed,
     )
 
     loss_fn = torch.nn.MSELoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
 
-    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{seed}"
+    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(f"{experiment}")
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -105,7 +106,7 @@ def train_fc1_mnist(outputs_dir: Path):
             metric=acc_metric,
         )
         
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}" + 'Wreuse'
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}" + 'Wreuse'
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -134,7 +135,7 @@ def train_fc1_mnist(outputs_dir: Path):
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -149,7 +150,8 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     subsample_size = (4000,1000) # Train and Test
     batch_size = 256
     label_noise = 0.0
-    seed = 11
+    training_seed = 11
+    dataset_seed = 11
     param_range = [
         3,
         4,
@@ -193,7 +195,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     weight_init_method = partial(nn_utils.init_normal, mean=0.0, std=0.1)
     
-    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{seed}"
+    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -210,7 +212,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             valset_ratio=0.0,
             normalize_imgs=False,
             flatten=True,
-            seed=seed,
+            seed=dataset_seed,
         )
         
         model = FC1(
@@ -221,7 +223,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             loss_fn=loss_fn,
             metric=acc_metric,
         )
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -242,7 +244,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
         results = trainer.fit(model, dataset, resume=False)
         tune.report(results)
@@ -282,7 +284,8 @@ def train_fc1_cifar10(outputs_dir: Path):
     subsample_size = (960, 500) # Train and Test
     batch_size = 512
     label_noise = 0.0
-    seed = 11
+    training_seed = 11
+    dataset_seed = 11
     param_range = [
         2,
         4,
@@ -327,14 +330,14 @@ def train_fc1_cifar10(outputs_dir: Path):
         valset_ratio=0.0,
         normalize_imgs=False,
         flatten=True,
-        seed=11,
+        seed=dataset_seed,
     )
 
     loss_fn = torch.nn.MSELoss()
 
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     
-    experiment = f"FC1_CIFAR10(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{seed}"
+    experiment = f"FC1_CIFAR10(subsampe{subsample_size}+NoAug+{label_noise}Noise)_WeightReuse_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -358,7 +361,7 @@ def train_fc1_cifar10(outputs_dir: Path):
             metric=acc_metric,
         )
 
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}" +  'Wreuse'
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}" +  'Wreuse'
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -386,7 +389,7 @@ def train_fc1_cifar10(outputs_dir: Path):
             comet_project_name='doubledescent-modelwise',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -405,7 +408,8 @@ def train_cnn5_cifar10(outputs_dir: Path):
     label_noise = 0.2
     use_amp = True
     log_comet = True
-    seed = 11
+    training_seed = 11
+    dataset_seed = 11
     param_range = [
         1,
         2,
@@ -464,10 +468,10 @@ def train_cnn5_cifar10(outputs_dir: Path):
         normalize_imgs=False,
         flatten=False,
         num_workers=4,
-        seed=seed,
+        seed=dataset_seed,
     )
     
-    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Sequential_Seed{seed}"
+    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise)_Sequential_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -485,7 +489,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
             metric=acc_metric
         )
         
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
         experiment_name += '|AMP' if use_amp else 'noAMP'
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
@@ -507,7 +511,7 @@ def train_cnn5_cifar10(outputs_dir: Path):
             comet_project_name='doubledescent-test',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
 
 
@@ -525,7 +529,8 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
     label_noise = 0.2
     use_amp = True
     log_comet = True
-    seed = 11
+    training_seed = 11
+    dataset_seed = 11
     param_range = [
         1,
         2,
@@ -578,7 +583,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
         transformsv2.RandomHorizontalFlip()
     ]
     
-    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise_Parallel_Seed{seed}"
+    experiment = f"CNN5_CIFAR10+NoAug+{label_noise}Noise_Parallel_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -594,7 +599,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             normalize_imgs=False,
             flatten=False,
             num_workers=1,
-            seed=seed,
+            seed=dataset_seed,
         )
         
         model = CNN5(
@@ -604,7 +609,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             metric=acc_metric
         )
         
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}"
         experiment_name += '|AMP' if use_amp else 'noAMP'
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
@@ -626,7 +631,7 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
             comet_project_name='doubledescent-test',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
 
         results = trainer.fit(model, dataset, resume=False)
@@ -667,24 +672,24 @@ def train_cnn5_cifar10_parallel(outputs_dir: Path):
 def train_fc1_mog_parallel(outputs_dir: Path):
     max_epochs = 1000
     num_samples = 100000
-    batch_size = 2048
+    batch_size = 1024
     num_features = 512
     num_classes = 30
     label_noise = 0.2
-    seed = 22
     
-    gpu_per_experiment:float = 0.2
-    cpu_per_experiment:float = 2
+    training_seed = 22
+    dataset_seed = 22
     
+    gpu_per_experiment:float = 1
+    cpu_per_experiment:float = 10
+    
+    log_comet = True
     
     param_range = [
         1,
-        2,
         4,
-        6,
         8,
         12,
-        16,
         18,
         20,
         22,
@@ -693,27 +698,13 @@ def train_fc1_mog_parallel(outputs_dir: Path):
         32,
         36,
         38,
-        40,
-        42,
         44,
-        46,
-        48,
-        50,
-        52,
-        54,
         56,
-        58,
-        60,
-        62,
-        64,
-        68,
-        72,
         80,
         96,
         128,
         160,
         192,
-        200,
         208,
         216,
         224,
@@ -722,28 +713,16 @@ def train_fc1_mog_parallel(outputs_dir: Path):
         248,
         256,
         264,
-        272,
         280,
-        288,
         296,
         304,
-        312,
         320,
-        328,
         336,
         344,
-        352,
-        360,
         368,
-        376,
-        384,
         392,
-        400,
-        416,
         432,
-        448,
         464,
-        480,
         512,
         768,
         1024,
@@ -752,9 +731,93 @@ def train_fc1_mog_parallel(outputs_dir: Path):
         4096,
         8192,
         16384,
-        32768,
-        65636
+        # 32768,
+        # 65636,
+        # 98504,
+        # 131272,
+        # 196908,
+        # 262544,
+        
     ]
+    
+    # param_range = [
+    #     1,
+    #     2,
+    #     4,
+    #     6,
+    #     8,
+    #     12,
+    #     16,
+    #     18,
+    #     20,
+    #     22,
+    #     24,
+    #     28,
+    #     32,
+    #     36,
+    #     38,
+    #     40,
+    #     42,
+    #     44,
+    #     46,
+    #     48,
+    #     50,
+    #     52,
+    #     54,
+    #     56,
+    #     58,
+    #     60,
+    #     62,
+    #     64,
+    #     68,
+    #     72,
+    #     80,
+    #     96,
+    #     128,
+    #     160,
+    #     192,
+    #     200,
+    #     208,
+    #     216,
+    #     224,
+    #     232,
+    #     240,
+    #     248,
+    #     256,
+    #     264,
+    #     272,
+    #     280,
+    #     288,
+    #     296,
+    #     304,
+    #     312,
+    #     320,
+    #     328,
+    #     336,
+    #     344,
+    #     352,
+    #     360,
+    #     368,
+    #     376,
+    #     384,
+    #     392,
+    #     400,
+    #     416,
+    #     432,
+    #     448,
+    #     464,
+    #     480,
+    #     512,
+    #     768,
+    #     1024,
+    #     2048,
+    #     3072,
+    #     4096,
+    #     8192,
+    #     16384,
+    #     32768,
+    #     65636
+    # ]
 
     optim_cgf = {
         'type': 'adam',
@@ -766,7 +829,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
     
-    experiment = f"FC1_MoG(smpls{num_samples}+ftrs{num_features}+cls{num_classes}+{label_noise}Noise)_Parallel_B4096_Seed{seed}"
+    experiment = f"FC1_MoG(smpls{num_samples}+ftrs{num_features}+cls{num_classes}+{label_noise}Noise)_Parallel_B{batch_size}_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
     outputs_dir.mkdir(exist_ok=True, parents=True)
@@ -789,7 +852,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
             label_noise=label_noise,
             train_val_test_ratio=[0.7, 0.0, 0.3],
             num_workers=cpu_per_experiment,
-            seed=seed
+            seed=dataset_seed
         )
         
         model = FC1(
@@ -801,7 +864,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
             metric=acc_metric,
         )
         
-        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{seed}"
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}"
         experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
         if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
         experiment_tags = experiment_name.split('_')
@@ -817,12 +880,12 @@ def train_fc1_mog_parallel(outputs_dir: Path):
             run_on_gpu=True,
             use_amp=False,
             batch_prog=False,
-            log_comet=True,
+            log_comet=log_comet,
             comet_api_key=os.getenv('COMET_API_KEY'),
-            comet_project_name='doubledescent-modelwise-fc-mog-parallel-b4096',
+            comet_project_name='doubledescent-modelwise-fc-mog-parallel-b1024-fixed',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
-            seed=seed
+            seed=training_seed
         )
         results = trainer.fit(model, dataset, resume=False)
         tune.report(results)
