@@ -272,7 +272,7 @@ class TrainerGS:
             epoch_train_loss = misc_utils.AverageMeter()
             epoch_train_acc = misc_utils.AverageMeter()
             for i, batch in enumerate(self.train_dataloader):
-                input_batch, target_batch = self.prepare_batch(batch)
+                input_batch, target_batch, is_noisy = self.prepare_batch(batch)
 
                 self.optim.zero_grad()
                 
@@ -341,20 +341,20 @@ class TrainerGS:
         
         if set=='train':
             for i, batch in enumerate(self.train_dataloader):
-                input_batch, target_batch = self.prepare_batch(batch)
+                input_batch, target_batch, is_noisy = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
                 loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
                 acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])
         elif set=='val':
             for i, batch in enumerate(self.val_dataloader):
-                input_batch, target_batch = self.prepare_batch(batch)
+                input_batch, target_batch, is_noisy = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
                 loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
                 acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])
                 
         elif set=='test':
             for i, batch in enumerate(self.test_dataloader):
-                input_batch, target_batch = self.prepare_batch(batch)
+                input_batch, target_batch, is_noisy = self.prepare_batch(batch)
                 loss, metric = self.model.validation_step(input_batch, target_batch, self.use_amp)
                 loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
                 acc_met.update(metric.detach().cpu().item(), input_batch.shape[0])

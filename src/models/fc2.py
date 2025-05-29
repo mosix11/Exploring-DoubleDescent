@@ -10,7 +10,7 @@ class FC2(nn.Module):
         self,
         input_dim=784,
         h_dims=(16, 16),
-        ouput_dim=10,
+        output_dim=10,
         weight_init=None,
         loss_fn=None,
         metric=None,
@@ -23,10 +23,10 @@ class FC2(nn.Module):
         self.input_dim = input_dim
         self.h1_dim = h_dims[0]
         self.h2_dim = h_dims[1]
-        self.output_dim = ouput_dim
+        self.output_dim = output_dim
         self.h1 = nn.Linear(input_dim, self.h1_dim, bias=True)
         self.h2 = nn.Linear(self.h1_dim, self.h2_dim, bias=True)
-        self.out = nn.Linear(self.h2_dim, ouput_dim, bias=True)
+        self.out = nn.Linear(self.h2_dim, output_dim, bias=True)
         
         
         if weight_init:
@@ -126,4 +126,13 @@ class FC2(nn.Module):
         return x
     
     def get_identifier(self):
-        return f"fc2|h({self.h1_dim, self.h2_dim})"
+        return f"fc2|h({self.h1_dim}, {self.h2_dim})|p{self._count_trainable_parameters()}"
+    
+    
+    
+    def _count_trainable_parameters(self):
+        """
+        Counts and returns the total number of trainable parameters in the model.
+        These are the parameters whose gradients are computed and are updated during backpropagation.
+        """
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)

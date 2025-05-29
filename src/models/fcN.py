@@ -4,12 +4,12 @@ import torch.nn.functional as F
 from torch.amp import autocast
 
 
-class FC3(nn.Module):
+class FCN(nn.Module):
     
     def __init__(
         self,
         input_dim=784,
-        h_dims=(16, 16, 16),
+        h_dims:list[int] = None,
         output_dim=10,
         weight_init=None,
         loss_fn=None,
@@ -17,18 +17,22 @@ class FC3(nn.Module):
     ):
         super().__init__()
         
-        if not len(h_dims) == 3:
-            raise ValueError('h_dims must contain three values specifying the width of three hidden layers.')
+        
+        if len(h_dims) < 4:
+            raise ValueError('This module is designed for networks deeper than 4 layers.')
         
         self.input_dim = input_dim
-        self.h1_dim = h_dims[0]
-        self.h2_dim = h_dims[1]
-        self.h3_dim = h_dims[2]
+        self.h_dims = h_dims
         self.output_dim = output_dim
-        self.h1 = nn.Linear(input_dim, self.h1_dim, bias=True)
-        self.h2 = nn.Linear(self.h1_dim, self.h2_dim, bias=True)
-        self.h3 = nn.Linear(self.h2_dim, self.h3_dim, bias=True)
-        self.out = nn.Linear(self.h3_dim, output_dim, bias=True)
+        
+        self.h_first = nn.Linear(input_dim, self.h_dims[0], bias=True)
+        self.out = nn.Linear(self.h_dims[-1], output_dim, bias=True)
+        
+        self.middle_layers = nn.ModuleList()
+        
+        for i in range(1, len(h_dims) - 1):
+            self.middle_layers.append(nn.Linear(self.h_dims[i], self.h_dims[i+1], bias=True))
+            
         
         
         if weight_init:
@@ -43,23 +47,23 @@ class FC3(nn.Module):
     
     def reuse_weights(self, old_state: dict):
         """
-        Load weights from a smaller FC3 model state_dict into this wider model.
+        Load weights from a smaller FCN model state_dict into this wider model.
         Copies the first `old_hidden` neurons exactly, and leaves the rest of the weights as they are initialized.
 
         Args:
-            old_model_or_state: state dict of an FC3 instance.
+            old_model_or_state: state dict of an FCN instance.
             init_std: standard deviation for normal init of new weights.
         """
         # TODO implement this function
             
     def reuse_weights_and_freeze(self, old_state: dict):
         """
-        Load weights from a smaller FC3 model state_dict into this wider model,
+        Load weights from a smaller FC4 model state_dict into this wider model,
         and **freeze** the loaded weights (prevent them from training) using
         gradient hooks.
 
         Args:
-            old_state: state dict of a smaller FC3 instance.
+            old_state: state dict of a smaller FCN instance.
         """
 
         self.reuse_weights(old_state)
@@ -122,14 +126,15 @@ class FC3(nn.Module):
         return preds
     
     def forward(self, x: torch.Tensor):
-        x = F.relu(self.h1(x))
-        x = F.relu(self.h2(x))
-        x = F.relu(self.h3(x))
+        x = F.relu(self.h_first(x))
+        for layer in self.middle_layers: 
+            x = F.relu(layer(x))
         x = self.out(x)
         return x
     
     def get_identifier(self):
-        return f"fc3|h({self.h1_dim}, {self.h2_dim}, {self.h3_dim})|p{self._count_trainable_parameters()}"
+        identifier = f"fc{len(self.h_dims)}|h{str(tuple(self.h_dims))}|p{self._count_trainable_parameters()}"
+        return identifier
     
     
     

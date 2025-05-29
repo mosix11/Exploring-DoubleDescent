@@ -1,6 +1,6 @@
 import comet_ml
 from src.datasets import MNIST, CIFAR10, FashionMNIST, MoGSynthetic
-from src.models import FC1, FC2, FC3, CNN5
+from src.models import FC1, FC2, FC3, FCN, CNN5
 from src.trainers import TrainerEp, TrainerGS
 import matplotlib.pyplot as plt
 from src.utils import nn_utils
@@ -20,7 +20,7 @@ import numpy as np
 
 
 def train_fc_mog_parallel(outputs_dir: Path):
-    max_epochs = 1000
+    max_epochs = 1
     num_samples = 100000
     batch_size = 1024
     num_features = 512
@@ -33,24 +33,34 @@ def train_fc_mog_parallel(outputs_dir: Path):
     gpu_per_experiment:float = 0.1
     cpu_per_experiment:float = 1
     
-    log_comet = True
+    log_comet = False
     
     
     with open('fc_width_depth_confs.pkl', 'rb') as f:
         params_dict = pickle.load(f)
     
-    fc1_widths = []
-    fc2_widths = []
-    fc3_widths = []
+    fc_widths = [[], [], [], [], [], []]
     
     for h, confs in params_dict.items():
-        fc1_widths.append(h)
-        fc2_widths.append(confs[2]['balanced']['widths'])
-        fc3_widths.append(confs[3]['balanced']['widths'])
+        fc_widths[0].append(h)
+        fc_widths[1].append(confs[2]['balanced']['widths'])
+        fc_widths[2].append(confs[3]['balanced']['widths'])
+        fc_widths[3].append(confs[4]['balanced']['widths'])
+        fc_widths[4].append(confs[5]['balanced']['widths'])
+        fc_widths[5].append(confs[6]['balanced']['widths'])
         
-    # print(fc1_widths)
-    # print(fc2_widths)
-    # print(fc3_widths)
+    # print(fc_widths[0])
+    # print('\n\n')
+    # print(fc_widths[1])
+    # print('\n\n')
+    # print(fc_widths[2])
+    # print('\n\n')
+    # print(fc_widths[3])
+    # print('\n\n')
+    # print(fc_widths[4])
+    # print('\n\n')
+    # print(fc_widths[5])
+    # return
     
     optim_cgf = {
         'type': 'adam',
@@ -89,7 +99,7 @@ def train_fc_mog_parallel(outputs_dir: Path):
             model = FC1(
                 input_dim=num_features,
                 hidden_dim=config['param'],
-                ouput_dim=num_classes,
+                output_dim=num_classes,
                 # weight_init=weight_init_method,
                 loss_fn=loss_fn,
                 metric=acc_metric,
@@ -98,7 +108,7 @@ def train_fc_mog_parallel(outputs_dir: Path):
             model = FC2(
                 input_dim=num_features,
                 h_dims=config['param'],
-                ouput_dim=num_classes,
+                output_dim=num_classes,
                 # weight_init=weight_init_method,
                 loss_fn=loss_fn,
                 metric=acc_metric,
@@ -107,7 +117,34 @@ def train_fc_mog_parallel(outputs_dir: Path):
             model = FC3(
                 input_dim=num_features,
                 h_dims=config['param'],
-                ouput_dim=num_classes,
+                output_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        elif config['model'] == 'fc4':
+            model = FCN(
+                input_dim=num_features,
+                h_dims=config['param'],
+                output_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        elif config['model'] == 'fc5':
+            model = FCN(
+                input_dim=num_features,
+                h_dims=config['param'],
+                output_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        elif config['model'] == 'fc6':
+            model = FCN(
+                input_dim=num_features,
+                h_dims=config['param'],
+                output_dim=num_classes,
                 # weight_init=weight_init_method,
                 loss_fn=loss_fn,
                 metric=acc_metric,
@@ -142,86 +179,41 @@ def train_fc_mog_parallel(outputs_dir: Path):
         results = trainer.fit(model, dataset, resume=False)
         tune.report(results)
         
-    configs_fc1 = {
-        'model': 'fc1',
-        "param": tune.grid_search(fc1_widths)
-    }
+        
+        
+    for idx, fc_confs in enumerate(fc_widths):
+        cfg = {
+            'model': f"fc{idx+1}",
+            "param": tune.grid_search(fc_confs)
+        }
+        
     
-    configs_fc2 = {
-        'model': 'fc2',
-        "param": tune.grid_search(fc2_widths)
-    }
-    
-    configs_fc3 = {
-        'model': 'fc3',
-        "param": tune.grid_search(fc3_widths)
-    }
-    
-    
-    resources_per_expr = {"cpu": cpu_per_experiment, "gpu": gpu_per_experiment}
-    trainable_with_gpu_resources = tune.with_resources(
-        experiment_trainable,
-        resources=resources_per_expr
-    )
-    
-    ray_strg_dir = outputs_dir / Path('ray')
-    ray_strg_dir.mkdir(exist_ok=True, parents=True)
-    tuner = tune.Tuner(
-        trainable_with_gpu_resources, # Your trainable function wrapped with resources
-        param_space=configs_fc1,    # The hyperparameters to explore
-        tune_config=TuneConfig(
-            scheduler=None
-        ),
-        run_config=RunConfig(
-            name=None, # Name for this experiment run
-            storage_path=str(ray_strg_dir.absolute()), # Default location for results
-            failure_config=FailureConfig(
-                max_failures=-1 # -1: Continue running other trials if one fails
-                                # 0 (Default): Stop entire run if one trial fails
+        resources_per_expr = {"cpu": cpu_per_experiment, "gpu": gpu_per_experiment}
+        trainable_with_gpu_resources = tune.with_resources(
+            experiment_trainable,
+            resources=resources_per_expr
+        )
+        
+        ray_strg_dir = outputs_dir / Path('ray')
+        ray_strg_dir.mkdir(exist_ok=True, parents=True)
+        tuner = tune.Tuner(
+            trainable_with_gpu_resources, # Your trainable function wrapped with resources
+            param_space=cfg,    # The hyperparameters to explore
+            tune_config=TuneConfig(
+                scheduler=None
+            ),
+            run_config=RunConfig(
+                name=None, # Name for this experiment run
+                storage_path=str(ray_strg_dir.absolute()), # Default location for results
+                failure_config=FailureConfig(
+                    max_failures=-1 # -1: Continue running other trials if one fails
+                                    # 0 (Default): Stop entire run if one trial fails
+                )
             )
         )
-    )
-    results = tuner.fit()
-    
-    tuner = tune.Tuner(
-        trainable_with_gpu_resources, # Your trainable function wrapped with resources
-        param_space=configs_fc2,    # The hyperparameters to explore
-        tune_config=TuneConfig(
-            scheduler=None
-        ),
-        run_config=RunConfig(
-            name=None, # Name for this experiment run
-            storage_path=str(ray_strg_dir.absolute()), # Default location for results
-            failure_config=FailureConfig(
-                max_failures=-1 # -1: Continue running other trials if one fails
-                                # 0 (Default): Stop entire run if one trial fails
-            )
-        )
-    )
-    results = tuner.fit()
-    
-    tuner = tune.Tuner(
-        trainable_with_gpu_resources, # Your trainable function wrapped with resources
-        param_space=configs_fc3,    # The hyperparameters to explore
-        tune_config=TuneConfig(
-            scheduler=None
-        ),
-        run_config=RunConfig(
-            name=None, # Name for this experiment run
-            storage_path=str(ray_strg_dir.absolute()), # Default location for results
-            failure_config=FailureConfig(
-                max_failures=-1 # -1: Continue running other trials if one fails
-                                # 0 (Default): Stop entire run if one trial fails
-            )
-        )
-    )
-    results = tuner.fit()
-    
-    
-    
-    
-    
-    
+        results = tuner.fit()
+        
+
     
     
     

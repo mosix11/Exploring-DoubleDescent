@@ -86,10 +86,11 @@ def _solve_for_last_hidden_width(
             best_wL_for_this_prefix = wL_cand
     return best_wL_for_this_prefix
 
-def _find_configs_for_L_hidden_layers(
+
+def _find_configs_for_L_hidden_layers_exhaustive(
     num_total_hidden_layers: int, 
     p_anchor: int, 
-    k_anchor_1hl_width: int, 
+    k_anchor_1hl_width: int, # Max width for iterating w1, w2, ... w_{L-1}
     input_dim: int, 
     output_dim: int, 
     count_bias: bool,
@@ -97,14 +98,21 @@ def _find_configs_for_L_hidden_layers(
 ) -> tuple[list[int] | None, list[int] | None]: # (closest_p_config, balanced_config)
     
     L = num_total_hidden_layers
+    
+    # For "closest_p" config
     best_overall_widths_closest_p = None
     min_overall_diff_closest_p = float('inf')
-    all_generated_valid_configs = [] # Store (widths, p_actual, diff_from_p_anchor)
 
+    # To store all valid generated configs for balanced search
+    all_generated_valid_configs = [] # list of tuples: (widths, p_actual, diff_from_p_anchor)
+
+    # Helper to update the "closest_p" configuration (captures p_anchor from outer scope)
     def _update_closest_p_config(new_widths_cand, p_actual_cand):
         nonlocal best_overall_widths_closest_p, min_overall_diff_closest_p
         if new_widths_cand is None or p_actual_cand == float('inf'): return
+
         current_diff = abs(p_actual_cand - p_anchor)
+
         if current_diff < min_overall_diff_closest_p:
             min_overall_diff_closest_p = current_diff
             best_overall_widths_closest_p = new_widths_cand
@@ -112,60 +120,92 @@ def _find_configs_for_L_hidden_layers(
             if best_overall_widths_closest_p is None or \
                sum(new_widths_cand) < sum(best_overall_widths_closest_p) or \
                (sum(new_widths_cand) == sum(best_overall_widths_closest_p) and \
-                new_widths_cand < best_overall_widths_closest_p):
+                new_widths_cand < best_overall_widths_closest_p): # Lexicographical
                 best_overall_widths_closest_p = new_widths_cand
     
-    # --- Loops to generate configurations & find closest_p ---
+    # --- Logic to generate configurations ---
     if L == 0: 
         current_widths = []
         actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
         if actual_params != float('inf'):
             _update_closest_p_config(current_widths, actual_params)
-            all_generated_valid_configs.append((current_widths, actual_params, abs(actual_params - p_anchor)))
+            all_generated_valid_configs.append(
+                (current_widths, actual_params, abs(actual_params - p_anchor))
+            )
     elif L == 1: 
+        # For L=1, the prefix to _solve_for_last_hidden_width is empty
         w1_solved = _solve_for_last_hidden_width(p_anchor, input_dim, output_dim, count_bias, [])
         if w1_solved is not None:
             current_widths = [w1_solved]
             actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
             if actual_params != float('inf'):
                 _update_closest_p_config(current_widths, actual_params)
-                all_generated_valid_configs.append((current_widths, actual_params, abs(actual_params - p_anchor)))
-    elif L == 2: 
-        for w1 in range(1, k_anchor_1hl_width + 1):
-            w2_solved = _solve_for_last_hidden_width(p_anchor, input_dim, output_dim, count_bias, [w1])
-            if w2_solved is not None:
-                current_widths = [w1, w2_solved]
-                actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
-                if actual_params != float('inf'):
-                    _update_closest_p_config(current_widths, actual_params)
-                    all_generated_valid_configs.append((current_widths, actual_params, abs(actual_params - p_anchor)))
-    elif L == 3: 
-        for w1 in range(1, k_anchor_1hl_width + 1):
-            for w2 in range(1, k_anchor_1hl_width + 1): 
-                w3_solved = _solve_for_last_hidden_width(p_anchor, input_dim, output_dim, count_bias, [w1, w2])
-                if w3_solved is not None:
-                    current_widths = [w1, w2, w3_solved]
-                    actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
+                all_generated_valid_configs.append(
+                    (current_widths, actual_params, abs(actual_params - p_anchor))
+                )
+    elif L >= 2:
+        # Recursive helper to generate prefixes [w1, ..., w_{L-1}]
+        # It will use/modify: p_anchor, input_dim, output_dim, count_bias (read-only)
+        # It will call: _solve_for_last_hidden_width, _calculate_params
+        # It will modify: best_overall_widths_closest_p, min_overall_diff_closest_p (via _update_closest_p_config)
+        # It will append to: all_generated_valid_configs
+        
+        def _generate_prefixes_recursive(
+            target_num_hidden_layers_for_network: int, # This is L
+            max_width_for_prefix_layer: int, # This is k_anchor_1hl_width
+            current_prefix_widths_list: list[int]
+        ):
+            current_prefix_length = len(current_prefix_widths_list)
+
+            # If the prefix has L-1 elements, we can solve for the L-th (last) hidden width
+            if current_prefix_length == target_num_hidden_layers_for_network - 1:
+                wL_solved = _solve_for_last_hidden_width(
+                    p_anchor, input_dim, output_dim, count_bias, 
+                    current_prefix_widths_list
+                )
+                if wL_solved is not None:
+                    final_widths = current_prefix_widths_list + [wL_solved]
+                    actual_params = _calculate_params(input_dim, output_dim, final_widths, count_bias)
                     if actual_params != float('inf'):
-                        _update_closest_p_config(current_widths, actual_params)
-                        all_generated_valid_configs.append((current_widths, actual_params, abs(actual_params - p_anchor)))
-    else:
-        print(f"Warning: Config search for {L} hidden layers not implemented beyond L=3.")
+                        _update_closest_p_config(final_widths, actual_params)
+                        all_generated_valid_configs.append(
+                            (final_widths, actual_params, abs(actual_params - p_anchor))
+                        )
+                return # Base case for this recursive path
+
+            # Recursive step: add another layer to the prefix
+            # We need to ensure we don't build a prefix longer than L-1
+            if current_prefix_length < target_num_hidden_layers_for_network - 1:
+                for next_width_val in range(1, max_width_for_prefix_layer + 1):
+                    _generate_prefixes_recursive(
+                        target_num_hidden_layers_for_network,
+                        max_width_for_prefix_layer,
+                        current_prefix_widths_list + [next_width_val]
+                    )
+        
+        # Initial call to the recursive helper for L >= 2
+        _generate_prefixes_recursive(L, k_anchor_1hl_width, [])
+        
+    else: # Should not be reached if L >= 0
+        print(f"Warning: Invalid number of hidden layers L={L}")
         return None, None
 
-    # --- Determine the "balanced_close_p" configuration ---
+
+    # --- Determine the "balanced_close_p" configuration (same logic as before) ---
     best_overall_widths_balanced = None
     if not all_generated_valid_configs:
-        return best_overall_widths_closest_p, best_overall_widths_closest_p if best_overall_widths_closest_p else None
+        # If closest_p was found, balanced is the same, otherwise both are None
+        return best_overall_widths_closest_p, best_overall_widths_closest_p
 
     param_diff_threshold_for_balance = float('inf')
-    if min_overall_diff_closest_p != float('inf'): # Check if any closest_p was found
+    # Ensure min_overall_diff_closest_p was actually updated (i.e., a closest_p config was found)
+    if min_overall_diff_closest_p != float('inf'):
         param_diff_threshold_for_balance = min_overall_diff_closest_p + balance_param_delta_allowance
     
     candidate_configs_for_balance_metric = []
     for cfg_widths, cfg_p_actual, cfg_diff in all_generated_valid_configs:
         if cfg_diff <= param_diff_threshold_for_balance:
-            balance_score = calculate_balance_score(cfg_widths)
+            balance_score = calculate_balance_score(cfg_widths) # Lower is better
             candidate_configs_for_balance_metric.append({
                 'widths': cfg_widths, 'diff': cfg_diff, 
                 'balance_score': balance_score, 'sum_widths': sum(cfg_widths) if cfg_widths else 0
@@ -177,7 +217,114 @@ def _find_configs_for_L_hidden_layers(
         candidate_configs_for_balance_metric.sort(key=lambda x: (
             x['balance_score'], x['diff'], x['sum_widths'], x['widths']
         ))
-        best_overall_widths_balanced = candidate_configs_for_balance_metric[0]['widths']
+        if candidate_configs_for_balance_metric: # Ensure list is not empty after sort
+             best_overall_widths_balanced = candidate_configs_for_balance_metric[0]['widths']
+        else: # Should ideally not happen if logic above is correct
+             best_overall_widths_balanced = best_overall_widths_closest_p
+
+
+    return best_overall_widths_closest_p, best_overall_widths_balanced
+
+
+def _find_configs_for_L_hidden_layers_fast( # Uses the more efficient heuristic for L >= 2
+    num_total_hidden_layers: int, 
+    p_anchor: int, 
+    k_anchor_1hl_width: int, 
+    input_dim: int, 
+    output_dim: int, 
+    count_bias: bool,
+    balance_param_delta_allowance: int 
+) -> tuple[list[int] | None, list[int] | None]: # (closest_p_config, balanced_config)
+    
+    L = num_total_hidden_layers
+    
+    best_overall_widths_closest_p = None
+    min_overall_diff_closest_p = float('inf')
+    all_generated_valid_configs = [] 
+
+    # Helper to update the "closest_p" configuration (captures p_anchor from outer scope)
+    def _update_closest_p_config(new_widths_cand, p_actual_cand):
+        nonlocal best_overall_widths_closest_p, min_overall_diff_closest_p
+        if new_widths_cand is None or p_actual_cand == float('inf'): return
+
+        current_diff = abs(p_actual_cand - p_anchor)
+
+        if current_diff < min_overall_diff_closest_p:
+            min_overall_diff_closest_p = current_diff
+            best_overall_widths_closest_p = new_widths_cand
+        elif current_diff == min_overall_diff_closest_p:
+            if best_overall_widths_closest_p is None or \
+               sum(new_widths_cand) < sum(best_overall_widths_closest_p) or \
+               (sum(new_widths_cand) == sum(best_overall_widths_closest_p) and \
+                new_widths_cand < best_overall_widths_closest_p): 
+                best_overall_widths_closest_p = new_widths_cand
+    
+    # --- Logic to generate configurations using the heuristic for L >= 2 ---
+    if L == 0: 
+        current_widths = []
+        actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
+        if actual_params != float('inf'):
+            _update_closest_p_config(current_widths, actual_params)
+            all_generated_valid_configs.append(
+                (current_widths, actual_params, abs(actual_params - p_anchor))
+            )
+    elif L == 1: 
+        w1_solved = _solve_for_last_hidden_width(p_anchor, input_dim, output_dim, count_bias, [])
+        if w1_solved is not None:
+            current_widths = [w1_solved]
+            actual_params = _calculate_params(input_dim, output_dim, current_widths, count_bias)
+            if actual_params != float('inf'):
+                _update_closest_p_config(current_widths, actual_params)
+                all_generated_valid_configs.append(
+                    (current_widths, actual_params, abs(actual_params - p_anchor))
+                )
+    elif L >= 2: # Apply "constant shared prefix width" heuristic
+        for shared_prefix_width_val in range(1, k_anchor_1hl_width + 1):
+            # Prefix is [shared_prefix_width_val, ..., shared_prefix_width_val] (L-1 times)
+            current_prefix_list = [shared_prefix_width_val] * (L - 1)
+            
+            wL_solved = _solve_for_last_hidden_width(
+                p_anchor, input_dim, output_dim, count_bias, 
+                current_prefix_list
+            )
+            if wL_solved is not None:
+                final_widths = current_prefix_list + [wL_solved]
+                actual_params = _calculate_params(input_dim, output_dim, final_widths, count_bias)
+                if actual_params != float('inf'):
+                    _update_closest_p_config(final_widths, actual_params)
+                    all_generated_valid_configs.append(
+                        (final_widths, actual_params, abs(actual_params - p_anchor))
+                    )
+    # else: L < 0 is not expected due to input validation in main function.
+
+    # --- Determine the "balanced_close_p" configuration (same logic as before) ---
+    best_overall_widths_balanced = None
+    if not all_generated_valid_configs:
+        return best_overall_widths_closest_p, best_overall_widths_closest_p if best_overall_widths_closest_p else None
+
+    param_diff_threshold_for_balance = float('inf')
+    if min_overall_diff_closest_p != float('inf'):
+        param_diff_threshold_for_balance = min_overall_diff_closest_p + balance_param_delta_allowance
+    
+    candidate_configs_for_balance_metric = []
+    for cfg_widths, cfg_p_actual, cfg_diff in all_generated_valid_configs:
+        if cfg_diff <= param_diff_threshold_for_balance:
+            balance_score = calculate_balance_score(cfg_widths) 
+            candidate_configs_for_balance_metric.append({
+                'widths': cfg_widths, 'diff': cfg_diff, 
+                'balance_score': balance_score, 'sum_widths': sum(cfg_widths) if cfg_widths else 0
+            })
+
+    if not candidate_configs_for_balance_metric:
+        best_overall_widths_balanced = best_overall_widths_closest_p
+    else:
+        candidate_configs_for_balance_metric.sort(key=lambda x: (
+            x['balance_score'], x['diff'], x['sum_widths'], x['widths']
+        ))
+        if candidate_configs_for_balance_metric: 
+             best_overall_widths_balanced = candidate_configs_for_balance_metric[0]['widths']
+        else: 
+             best_overall_widths_balanced = best_overall_widths_closest_p
 
     return best_overall_widths_closest_p, best_overall_widths_balanced
 
@@ -189,7 +336,8 @@ def get_network_configurations_range(
     target_hidden_layers: list[int], 
     count_bias: bool, 
     max_anchor_1hl_width: int,
-    balance_param_delta_allowance: int = 5 # New parameter with default
+    balance_param_delta_allowance: int = 5,
+    fast=True
 ) -> collections.OrderedDict:
     if not isinstance(input_dim, int) or input_dim < 1:
         raise ValueError("input_dim must be a positive integer.")
@@ -218,15 +366,27 @@ def get_network_configurations_range(
                     # For L=1, balanced is same as closest
                     balanced_cfg = anchor_1hl_widths 
                 else: # Fallback, should ideally not be hit for L_target=1 if p_anchor is from k_1hl
-                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers(
+                    if fast:
+                        closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_fast(
+                            L_target, p_anchor, k_1hl, 
+                            input_dim, output_dim, count_bias, balance_param_delta_allowance
+                        )
+                    else:
+                        closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_exhaustive(
+                            L_target, p_anchor, k_1hl, 
+                            input_dim, output_dim, count_bias, balance_param_delta_allowance
+                        )
+            else: 
+                if fast:
+                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_fast(
                         L_target, p_anchor, k_1hl, 
                         input_dim, output_dim, count_bias, balance_param_delta_allowance
                     )
-            else: 
-                closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers(
-                    L_target, p_anchor, k_1hl, 
-                    input_dim, output_dim, count_bias, balance_param_delta_allowance
-                )
+                else:
+                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_exhaustive(
+                        L_target, p_anchor, k_1hl, 
+                        input_dim, output_dim, count_bias, balance_param_delta_allowance
+                    )
             
             if closest_p_cfg is not None and balanced_cfg is not None : # Both must be found
                 current_group_configs[L_target] = {
@@ -249,7 +409,8 @@ def get_network_configurations_list(
     target_hidden_layers: list[int], 
     count_bias: bool, 
     anchor_1hl_width_list: list[int],
-    balance_param_delta_allowance: int = 5 # New parameter with default
+    balance_param_delta_allowance: int = 5,
+    fast=True
 ) -> collections.OrderedDict:
     if not isinstance(input_dim, int) or input_dim < 1:
         raise ValueError("input_dim must be a positive integer.")
@@ -278,15 +439,27 @@ def get_network_configurations_list(
                     # For L=1, balanced is same as closest
                     balanced_cfg = anchor_1hl_widths 
                 else: # Fallback, should ideally not be hit for L_target=1 if p_anchor is from k_1hl
-                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers(
+                    if fast:
+                        closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_fast(
+                            L_target, p_anchor, k_1hl, 
+                            input_dim, output_dim, count_bias, balance_param_delta_allowance
+                        )
+                    else:
+                        closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_exhaustive(
+                            L_target, p_anchor, k_1hl, 
+                            input_dim, output_dim, count_bias, balance_param_delta_allowance
+                        )
+            else: 
+                if fast:
+                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_fast(
                         L_target, p_anchor, k_1hl, 
                         input_dim, output_dim, count_bias, balance_param_delta_allowance
                     )
-            else: 
-                closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers(
-                    L_target, p_anchor, k_1hl, 
-                    input_dim, output_dim, count_bias, balance_param_delta_allowance
-                )
+                else:
+                    closest_p_cfg, balanced_cfg = _find_configs_for_L_hidden_layers_exhaustive(
+                        L_target, p_anchor, k_1hl, 
+                        input_dim, output_dim, count_bias, balance_param_delta_allowance
+                    )
             
             if closest_p_cfg is not None and balanced_cfg is not None : # Both must be found
                 current_group_configs[L_target] = {
@@ -307,7 +480,7 @@ def get_network_configurations_list(
 
 input_features = 512
 output_classes = 30
-layers_to_test = [1, 2, 3]
+layers_to_test = [1, 2, 3, 4, 5, 6]
 include_bias = True
 max_k_for_1hl_anchor = 256
 
