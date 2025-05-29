@@ -20,7 +20,7 @@ import numpy as np
 
 
 def train_fc_mog_parallel(outputs_dir: Path):
-    max_epochs = 1
+    max_epochs = 1000
     num_samples = 100000
     batch_size = 1024
     num_features = 512
