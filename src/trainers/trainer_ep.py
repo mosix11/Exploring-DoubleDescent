@@ -207,7 +207,7 @@ class TrainerEp:
         )
         self.comet_experiment = comet_ml.start(
             api_key=self.comet_api_key,
-            workspace="mosix11",
+            workspace="mosix",
             project_name=self.comet_project_name,
             experiment_key=experiment_key,
             online=True,

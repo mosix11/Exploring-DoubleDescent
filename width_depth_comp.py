@@ -30,146 +30,192 @@ def train_fc_mog_parallel(outputs_dir: Path):
     training_seed = 22
     dataset_seed = 22
     
-    gpu_per_experiment:float = 1
-    cpu_per_experiment:float = 10
+    gpu_per_experiment:float = 0.1
+    cpu_per_experiment:float = 1
     
     log_comet = True
     
     
-    fc1_h_widths= np.array([
-        1,
-        2,
-        4,
-        6,
-        8,
-        10,
-        12,
-        14,
-        16,
-        18,
-        20,
-        22,
-        24,
-        26,
-        28,
-        30,
-        32,
-        34,
-        36,
-        38,
-        40,
-        42,
-        44,
-        50,
-        56,
-        64,
-        72,
-        80,
-        96,
-        112,
-        128,
-        144,
-        160,
-        176,
-        192,
-        208,
-        216,
-        224,
-        232,
-        240,
-        248,
-        256,
-        264,
-        280,
-        296,
-        304,
-        320,
-        336,
-        344,
-        368,
-        392,
-        432,
-        464,
-        512,
-        640,
-        768,
-        896,
-        1024,
-        2048,
-        3072,
-        4096,
-        8192,
-        16384
-    ])
+    with open('fc_width_depth_confs.pkl', 'rb') as f:
+        params_dict = pickle.load(f)
+    
+    fc1_widths = []
+    fc2_widths = []
+    fc3_widths = []
+    
+    for h, confs in params_dict.items():
+        fc1_widths.append(h)
+        fc2_widths.append(confs[2]['balanced']['widths'])
+        fc3_widths.append(confs[3]['balanced']['widths'])
+        
+    # print(fc1_widths)
+    # print(fc2_widths)
+    # print(fc3_widths)
+    
+    optim_cgf = {
+        'type': 'adam',
+        'lr': 1e-4,
+        'betas': (0.9, 0.999)
+    }
+    lr_schedule_cfg = None
+    
+    loss_fn = torch.nn.CrossEntropyLoss()
+    acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=num_classes)
+    
+    experiment = f"FC_WD_MoG(smpls{num_samples}+ftrs{num_features}+cls{num_classes}+{label_noise}Noise)_Parallel_B{batch_size}_Seed{training_seed}"
+    
+    outputs_dir = outputs_dir / Path(experiment)
+    outputs_dir.mkdir(exist_ok=True, parents=True)
+    
+    def experiment_trainable(config):
+        
+        dataset = MoGSynthetic(
+            batch_size=batch_size,
+            num_samples = num_samples,
+            num_features=num_features,
+            num_classes=num_classes,
+            clusters_per_class='random',
+            base_cluster_std='random',
+            covariance_type='full',
+            class_sep=1.0,
+            intra_class_spread=2.0,
+            label_noise=label_noise,
+            train_val_test_ratio=[0.7, 0.0, 0.3],
+            num_workers=cpu_per_experiment,
+            seed=dataset_seed
+        )
+        
+        if config['model'] == 'fc1':
+            model = FC1(
+                input_dim=num_features,
+                hidden_dim=config['param'],
+                ouput_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        elif config['model'] == 'fc2':
+            model = FC2(
+                input_dim=num_features,
+                h_dims=config['param'],
+                ouput_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        elif config['model'] == 'fc3':
+            model = FC3(
+                input_dim=num_features,
+                h_dims=config['param'],
+                ouput_dim=num_classes,
+                # weight_init=weight_init_method,
+                loss_fn=loss_fn,
+                metric=acc_metric,
+            )
+        else:
+            raise ValueError('Unknown model config.')
+        
+        
+        experiment_name = model.get_identifier() + '_' + dataset.get_identifier() + f"_seed{training_seed}"
+        experiment_name += '_' + f"{optim_cgf['type']}|lr{optim_cgf['lr']}|b{batch_size}|noAMP"
+        if lr_schedule_cfg: experiment_name += f"|{lr_schedule_cfg['type']}"
+        experiment_tags = experiment_name.split('_')
+
+        trainer = TrainerEp(
+            outputs_dir=outputs_dir,
+            max_epochs=max_epochs,
+            optimizer_cfg=optim_cgf,
+            lr_schedule_cfg=lr_schedule_cfg,
+            early_stopping=False,
+            validation_freq=1,
+            save_best_model=True,
+            run_on_gpu=True,
+            use_amp=False,
+            batch_prog=False,
+            log_comet=log_comet,
+            comet_api_key=os.getenv('COMET_API_KEY'),
+            comet_project_name='doubledescent-modelwise-width_vs_depth-fc-mog-parallel-b1024',
+            exp_name=experiment_name,
+            exp_tags=experiment_tags,
+            seed=training_seed
+        )
+        results = trainer.fit(model, dataset, resume=False)
+        tune.report(results)
+        
+    configs_fc1 = {
+        'model': 'fc1',
+        "param": tune.grid_search(fc1_widths)
+    }
+    
+    configs_fc2 = {
+        'model': 'fc2',
+        "param": tune.grid_search(fc2_widths)
+    }
+    
+    configs_fc3 = {
+        'model': 'fc3',
+        "param": tune.grid_search(fc3_widths)
+    }
     
     
-    fc2_h_width = np.array([
-        [1, 1],
-        [1, 18],
-        [1, 52],
-        [4, 19],
-        [6, 5],
-        [8, 6],
-        [8, 34],
-        [4, 112],
-        [7, 77],
-        [12, 21],
-        [5, 140],
-        [5, 155],
-        16,
-        18,
-        20,
-        22,
-        24,
-        26,
-        28,
-        30,
-        32,
-        34,
-        36,
-        38,
-        44,
-        56,
-        80,
-        96,
-        112,
-        128,
-        144,
-        160,
-        176,
-        192,
-        208,
-        216,
-        224,
-        232,
-        240,
-        248,
-        256,
-        264,
-        280,
-        296,
-        304,
-        320,
-        336,
-        344,
-        368,
-        392,
-        432,
-        464,
-        512,
-        640,
-        768,
-        896,
-        1024,
-        2048,
-        3072,
-        4096,
-        8192,
-        16384
-    ])
+    resources_per_expr = {"cpu": cpu_per_experiment, "gpu": gpu_per_experiment}
+    trainable_with_gpu_resources = tune.with_resources(
+        experiment_trainable,
+        resources=resources_per_expr
+    )
     
-    fc1_param_counts = (num_features + 1) * fc1_h_widths + (fc1_h_widths + 1) * num_classes
-    print(fc1_param_counts)
+    ray_strg_dir = outputs_dir / Path('ray')
+    ray_strg_dir.mkdir(exist_ok=True, parents=True)
+    tuner = tune.Tuner(
+        trainable_with_gpu_resources, # Your trainable function wrapped with resources
+        param_space=configs_fc1,    # The hyperparameters to explore
+        tune_config=TuneConfig(
+            scheduler=None
+        ),
+        run_config=RunConfig(
+            name=None, # Name for this experiment run
+            storage_path=str(ray_strg_dir.absolute()), # Default location for results
+            failure_config=FailureConfig(
+                max_failures=-1 # -1: Continue running other trials if one fails
+                                # 0 (Default): Stop entire run if one trial fails
+            )
+        )
+    )
+    results = tuner.fit()
+    
+    tuner = tune.Tuner(
+        trainable_with_gpu_resources, # Your trainable function wrapped with resources
+        param_space=configs_fc2,    # The hyperparameters to explore
+        tune_config=TuneConfig(
+            scheduler=None
+        ),
+        run_config=RunConfig(
+            name=None, # Name for this experiment run
+            storage_path=str(ray_strg_dir.absolute()), # Default location for results
+            failure_config=FailureConfig(
+                max_failures=-1 # -1: Continue running other trials if one fails
+                                # 0 (Default): Stop entire run if one trial fails
+            )
+        )
+    )
+    results = tuner.fit()
+    
+    tuner = tune.Tuner(
+        trainable_with_gpu_resources, # Your trainable function wrapped with resources
+        param_space=configs_fc3,    # The hyperparameters to explore
+        tune_config=TuneConfig(
+            scheduler=None
+        ),
+        run_config=RunConfig(
+            name=None, # Name for this experiment run
+            storage_path=str(ray_strg_dir.absolute()), # Default location for results
+            failure_config=FailureConfig(
+                max_failures=-1 # -1: Continue running other trials if one fails
+                                # 0 (Default): Stop entire run if one trial fails
+            )
+        )
+    )
+    results = tuner.fit()
     
     
     
