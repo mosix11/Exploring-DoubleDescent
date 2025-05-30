@@ -30,7 +30,7 @@ def train_fc_mog_parallel(outputs_dir: Path):
     training_seed = 22
     dataset_seed = 22
     
-    gpu_per_experiment:float = 0.1
+    gpu_per_experiment:float = 0.05
     cpu_per_experiment:float = 1
     
     log_comet = False
@@ -48,6 +48,13 @@ def train_fc_mog_parallel(outputs_dir: Path):
         fc_widths[3].append(confs[4]['balanced']['widths'])
         fc_widths[4].append(confs[5]['balanced']['widths'])
         fc_widths[5].append(confs[6]['balanced']['widths'])
+
+    # print(len(fc_widths[0]))
+    # print(len(fc_widths[1]))
+    # print(len(fc_widths[2]))
+    # print(len(fc_widths[3]))
+    # print(len(fc_widths[4]))
+    # print(len(fc_widths[5]))
         
     # print(fc_widths[0])
     # print('\n\n')
