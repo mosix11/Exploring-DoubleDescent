@@ -236,37 +236,6 @@ class MoGSyntheticDataset(Dataset):
         else: # 'full', store list of Cholesky factors
              self.cluster_generators_ = generators_list # List of Tensors
 
-
-
-
-    # def _apply_label_noise(self):
-    #     """Internal method to apply label noise."""
-    #     # (Code for _apply_label_noise remains the same as previous version)
-    #     n_flip = int(self.label_noise * self.n_samples)
-    #     if n_flip == 0: return
-
-    #     n_flip = min(n_flip, self.n_samples)
-    #     flip_indices = torch.randperm(self.n_samples, generator=self.generator)[:n_flip]
-    #     original_labels = self.labels[flip_indices]
-
-    #     new_labels = torch.empty_like(original_labels)
-    #     possible_labels_full = list(range(self.n_classes))
-
-    #     for i in range(n_flip):
-    #         current_label = original_labels[i].item()
-    #         if self.n_classes <= 1:
-    #              new_labels[i] = current_label # Cannot flip if only one class
-    #              continue
-
-    #         possible_labels = possible_labels_full.copy()
-    #         possible_labels.remove(current_label)
-
-    #         rand_idx = torch.randint(0, len(possible_labels), (1,), generator=self.generator).item()
-    #         new_labels[i] = possible_labels[rand_idx]
-
-    #     self.labels[flip_indices] = new_labels
-
-
     def __len__(self):
         """Returns the total number of samples in the dataset."""
         return self.n_samples
@@ -328,13 +297,14 @@ class MoGSynthetic:
             raise ValueError('The sum of the values passed as `train_val_test_ratio` should be 1!')
         self.train_val_test_ratio = train_val_test_ratio
         
+            
         
         param_dict = {
             'num_samples': num_samples,
             'num_features': num_features,
             'num_classes': num_classes,
-            'clusters_per_class': tuple(clusters_per_class),
-            'base_cluster_std': tuple(base_cluster_std),
+            'clusters_per_class': clusters_per_class if isinstance(clusters_per_class, int) else tuple(clusters_per_class) ,
+            'base_cluster_std': base_cluster_std if isinstance(base_cluster_std, float) else tuple(base_cluster_std),
             'covariance_type': covariance_type,
             'class_sep': class_sep,
             'intra_class_spread': intra_class_spread,
@@ -504,6 +474,3 @@ class MoGSynthetic:
             generator=self.generator
         )
         return dataloader
-    
-    
-    

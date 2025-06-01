@@ -30,7 +30,7 @@ def train_fc_mog_parallel(outputs_dir: Path):
     training_seed = 22
     dataset_seed = 22
     
-    gpu_per_experiment:float = 0.05
+    gpu_per_experiment:float = 0.1
     cpu_per_experiment:float = 1
     
     log_comet = False
@@ -98,7 +98,7 @@ def train_fc_mog_parallel(outputs_dir: Path):
             intra_class_spread=2.0,
             label_noise=label_noise,
             train_val_test_ratio=[0.7, 0.0, 0.3],
-            num_workers=cpu_per_experiment,
+            num_workers=1,
             seed=dataset_seed
         )
         

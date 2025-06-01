@@ -10,4 +10,4 @@ tensorboard
 torch-tb-profiler
 comet_ml
 python-dotenv
-
+ray[tune]
