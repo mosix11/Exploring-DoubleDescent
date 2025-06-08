@@ -13,13 +13,13 @@ class FCN(nn.Module):
         output_dim=10,
         weight_init=None,
         loss_fn=None,
-        metric=None,
+        metrics:dict=None,
     ):
         super().__init__()
         
         
-        if len(h_dims) < 4:
-            raise ValueError('This module is designed for networks deeper than 4 layers.')
+        if len(h_dims) < 2:
+            raise ValueError('This module is designed for networks deeper than 2 hidden layers.')
         
         self.input_dim = input_dim
         self.h_dims = h_dims
@@ -41,56 +41,14 @@ class FCN(nn.Module):
         if not loss_fn:
             raise RuntimeError('The loss function must be specified!')
         self.loss_fn = loss_fn
-        if metric:
-            self.metric = metric
+        
+            
+        self.metrics = nn.ModuleDict()
+        if metrics:
+            for name, metric_instance in metrics.items():
+                self.metrics[name] = metric_instance
             
     
-    def reuse_weights(self, old_state: dict):
-        """
-        Load weights from a smaller FCN model state_dict into this wider model.
-        Copies the first `old_hidden` neurons exactly, and leaves the rest of the weights as they are initialized.
-
-        Args:
-            old_model_or_state: state dict of an FCN instance.
-            init_std: standard deviation for normal init of new weights.
-        """
-        # TODO implement this function
-            
-    def reuse_weights_and_freeze(self, old_state: dict):
-        """
-        Load weights from a smaller FC4 model state_dict into this wider model,
-        and **freeze** the loaded weights (prevent them from training) using
-        gradient hooks.
-
-        Args:
-            old_state: state dict of a smaller FCN instance.
-        """
-
-        self.reuse_weights(old_state)
-
-        # TODO implement this function
-
-
-    def remove_freeze_hooks(self):
-        """Removes any gradient hooks previously attached by reuse_weights_and_freeze."""
-        if hasattr(self, '_freeze_handles'):
-            for handle in self._freeze_handles:
-                handle.remove()
-        self._freeze_handles = []
-
-
-    def log_stats(self):
-        """
-        Calculates and returns a dictionary containing the mean and standard deviation
-        of the reused and non-reused weights and biases.
-
-        Returns:
-            dict: A dictionary where keys are parameter names (e.g., 'h1.weight_reused_mean')
-                  and values are the corresponding statistics.
-        """
-    
-        # TODO implement this function
-
 
     def training_step(self, x, y, use_amp=False):        
         with autocast('cuda', enabled=use_amp):
@@ -100,10 +58,10 @@ class FCN(nn.Module):
                 loss = self.loss_fn(preds, y_onehot)
             else:
                 loss = self.loss_fn(preds, y)
-        if self.metric:
-            met = self.metric(preds, y)
-            return loss, met
-        else: return loss, None
+        if self.metrics:
+            for name, metric in self.metrics.items():
+                metric.update(preds, y)
+        return loss
         
     def validation_step(self, x, y, use_amp=False):
         with torch.no_grad():
@@ -114,11 +72,23 @@ class FCN(nn.Module):
                     loss = self.loss_fn(preds, y_onehot)
                 else:
                     loss = self.loss_fn(preds, y)
-        if self.metric:
-            met = self.metric(preds, y)
-            return loss, met
-        else: return loss, None
+        if self.metrics:
+            for name, metric in self.metrics.items():
+                metric.update(preds, y)
+        return loss
+
+
+    def compute_metrics(self):
+        results = {}
+        if self.metrics: 
+            for name, metric in self.metrics.items():
+                results[name] = metric.compute()
+        return results
     
+    def reset_metrics(self):
+        if self.metrics:
+            for name, metric in self.metrics.items():
+                metric.reset()
     
     def predict(self, x):
         with torch.no_grad():
