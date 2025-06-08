@@ -30,8 +30,8 @@ class FCN(nn.Module):
         
         self.middle_layers = nn.ModuleList()
         
-        for i in range(1, len(h_dims) - 1):
-            self.middle_layers.append(nn.Linear(self.h_dims[i], self.h_dims[i+1], bias=True))
+        for i in range(len(h_dims) - 1):
+            self.middle_layers.append(nn.Linear(h_dims[i], h_dims[i+1], bias=True))
             
         
         

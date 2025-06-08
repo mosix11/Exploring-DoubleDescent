@@ -28,7 +28,7 @@ if __name__ == "__main__":
         1, 4, 8, 12, 18, 20, 22, 24, 28, 32, 36, 38, 44, 56, 80, 96, 128,
         160, 192, 208, 216, 224, 232, 240, 248, 256, 264, 280, 296, 304,
         320, 336, 344, 368, 392, 432, 464, 512, 768, 1024, 2048, 3072,
-        4096, 8192, 16384
+        4096, 8192, 16384, 32768, 65636, 98504, 131272, 196908, 262544
     ]
     
     num_samples = 100000
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         model = FC1(
             input_dim=num_features,
             hidden_dim=h,
-            ouput_dim=num_classes,
+            output_dim=num_classes,
             # weight_init=weight_init_method,
             loss_fn=loss_fn,
             metric=acc_metric,

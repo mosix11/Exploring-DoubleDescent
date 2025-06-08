@@ -149,31 +149,40 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     max_epochs = 2000
     subsample_size = (4000,1000) # Train and Test
     batch_size = 256
-    label_noise = 0.2
+    label_noise = 0.0
     training_seed = 11
     dataset_seed = 11
     
     
-    gpu_per_experiment:float = 0.125
-    cpu_per_experiment:float = 1.5
+    gpu_per_experiment:float = 0.1
+    cpu_per_experiment:float = 1
     
     log_comet = True
+    
+    param_range = [2,   4,   6,   8,  10,  12,  14,  16,  18,  20,  22,  24,
+        26,  28,  30,  32,  34,  36,  38,  40,  42,  44,  46,  48,  50,
+        52,  54,  56,  58,  60,  62,  64,  66,  68,  70,  72,  74,  76,
+        78,  80,  82,  86,  90,  94,  98, 104, 110, 116, 122, 128,
+        140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 
+        300, 360, 420, 500, 600, 700, 800, 900, 1000, 1100,
+        1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000,
+        3200, 3400, 3600, 3800, 4000, 4400, 4800, 5200, 5600, 6000,
+        7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000
+        ]
     
     # param_range = [2,   4,   6,   8,  10,  12,  14,  16,  18,  20,  22,  24,
     #     26,  28,  30,  32,  34,  36,  38,  40,  42,  44,  46,  48,  50,
     #     52,  54,  56,  58,  60,  62,  64,  66,  68,  70,  72,  74,  76,
     #     78,  80,  82,  86,  90,  94,  98, 104, 110, 116, 122, 128,
+    #     130, 135, 145, 155, 165, 175, 185, 195, 205,
     #     140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 
+    #     210, 215, 225, 230, 235, 245, 250, 255, 265, 270, 275, 280, 285, 290, 295,
     #     300, 360, 420, 500, 600, 700, 800, 900, 1000, 1100,
     #     1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000,
     #     3200, 3400, 3600, 3800, 4000, 4400, 4800, 5200, 5600, 6000,
     #     7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000
     #     ]
     
-    param_range = [
-        130, 135, 145, 155, 165, 175, 185, 195, 205,
-        210, 215, 225, 230, 235, 245, 250, 255, 265, 270, 275, 280, 285, 290, 295,
-    ]
 
     
     # optim_cgf = {
@@ -193,7 +202,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     # }
     # lr_schedule_cfg = {
     #     "type": "step",
-    #     "milestones": list(range(100, 1000, 100)),
+    #     "milestones": list(range(100, 2000, 100)),
     #     "gamma": 0.9,
     # }
     
@@ -205,12 +214,12 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
     lr_schedule_cfg = None
     
     
-    # loss_fn = torch.nn.MSELoss()
-    loss_fn = torch.nn.CrossEntropyLoss()
+    loss_fn = torch.nn.MSELoss()
+    # loss_fn = torch.nn.CrossEntropyLoss()
     acc_metric = torchmetrics.Accuracy(task='multiclass', num_classes=10)
     weight_init_method = partial(nn_utils.init_normal, mean=0.0, std=0.1)
     
-    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{training_seed}"
+    experiment = f"FC1_MNIST(subsampe{subsample_size}+NoAug+{label_noise}Noise)_Parallel_Seed{training_seed}_ADAM+MSE"
     # experiment = f"FC1_MNIST(Full+NoAug+{label_noise}Noise)_Parallel_Seed{training_seed}"
     
     outputs_dir = outputs_dir / Path(experiment)
@@ -257,7 +266,7 @@ def train_fc1_mnist_parallel(outputs_dir: Path):
             batch_prog=False,
             log_comet=log_comet,
             comet_api_key=os.getenv('COMET_API_KEY'),
-            comet_project_name='dd-modelwise-fc1-mnist-sub4000-1000',
+            comet_project_name='dd-modelwise-fc1-mnist-0noise-adam-mse-sub4000-1000',
             exp_name=experiment_name,
             exp_tags=experiment_tags,
             seed=training_seed
@@ -689,7 +698,7 @@ def train_fc1_mog_parallel(outputs_dir: Path):
     
     
     
-    max_epochs = 400
+    max_epochs = 1000
     batch_size = 1024
     training_seed = 22
     dataset_seed = 22
@@ -699,30 +708,30 @@ def train_fc1_mog_parallel(outputs_dir: Path):
     
     log_comet = True
     
-    # dataset_params = {
-    #     'num_samples': 100000,
-    #     'num_features': 512,         
-    #     'num_classes': 30,          
-    #     'label_noise': 0.2,         
-    #     'clusters_per_class': 'random', 
-    #     'base_cluster_std': 'random',   
-    #     'covariance_type': 'full',   
-    #     'class_sep': 1.0,           
-    #     'intra_class_spread': 2.0,    
-    #     
-    # }
-    
     dataset_params = {
-        'num_samples': 20000,
-        'num_features': 64,
-        'num_classes': 40,
-        'label_noise': 0.20,
-        'clusters_per_class': 1, 
-        'base_cluster_std': 1.0, 
-        'covariance_type': 'full',
-        'class_sep': 1.0,
-        'intra_class_spread': 1.0,
+        'num_samples': 100000,
+        'num_features': 512,         
+        'num_classes': 30,          
+        'label_noise': 0.2,         
+        'clusters_per_class': 'random', 
+        'base_cluster_std': 'random',   
+        'covariance_type': 'full',   
+        'class_sep': 1.0,           
+        'intra_class_spread': 2.0,    
+        
     }
+    
+    # dataset_params = {
+    #     'num_samples': 20000,
+    #     'num_features': 64,
+    #     'num_classes': 40,
+    #     'label_noise': 0.20,
+    #     'clusters_per_class': 1, 
+    #     'base_cluster_std': 1.0, 
+    #     'covariance_type': 'full',
+    #     'class_sep': 1.0,
+    #     'intra_class_spread': 1.0,
+    # }
     
     
     param_range = [16, 32, 128, 256, 384, 512, 768, 1024, 1280, 1536, 1792, 2048, 2304, 2560, 2816, 3072, 3328, 3584, 3840, 4096,

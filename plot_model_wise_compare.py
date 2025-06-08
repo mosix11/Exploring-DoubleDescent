@@ -208,9 +208,9 @@ else:
         for idx, metric_name in enumerate(metrics_with_data):
             ax = axes[idx]
             data = plot_data[metric_name]
-            ax.plot(data['h'], data['parallel'], marker='o', linestyle='-', label='Random Init')
-            ax.plot(data['h'], data['reuse'], marker='x', linestyle='--', label='WeightReuse')
-            ax.plot(data['h'], data['freeze'], marker='s', linestyle='-.', label='WeightReuse+Freeze')
+            ax.plot(data['h'], data['parallel'], marker='o', markersize=3, linestyle='-', label='Random Init')
+            ax.plot(data['h'], data['reuse'], marker='x', markersize=3, linestyle='--', label='WeightReuse')
+            ax.plot(data['h'], data['freeze'], marker='2', markersize=3, linestyle='-.', label='WeightReuse+Freeze')
 
             ax.set_xscale('log')
             ax.set_xlabel('Hidden Dimension (h)')

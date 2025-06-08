@@ -159,7 +159,7 @@ def plot_modelwise_dd_curves(results, x_axis='p', x_log=True, smoothing_window=0
                  color=curve_colors[color_key],
                  linestyle=linestyles[level1_key],
                  marker=markers[marker_key],
-                 markersize=6,
+                 markersize=2,
                  alpha=0.9)
     ax1.legend(loc='upper right')
 
@@ -183,7 +183,7 @@ def plot_modelwise_dd_curves(results, x_axis='p', x_log=True, smoothing_window=0
                  color=curve_colors[color_key],
                  linestyle=linestyles[level1_key],
                  marker=markers[marker_key],
-                 markersize=6,
+                 markersize=2,
                  alpha=0.9)
     ax2.legend(loc='lower right')
 
@@ -234,8 +234,11 @@ def load_experiment_results(base_dir, pattern, key_group=1, json_path=Path('log/
 
 if __name__ == '__main__':
     
-    base_dir = 'outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.2Noise)_Parallel_Seed11'
+    # # base_dir = 'outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.2Noise)_Parallel_Seed11'
+    # base_dir = 'outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.0Noise)_Parallel_Seed11_MoreParam'
     # base_dir = 'outputs/width_depth/FC_WD_MoG(smpls100000+ftrs512+cls30+0.2Noise)_Parallel_B1024_Seed22'
+    # base_dir = 'outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.0Noise)_Parallel_Seed11_SGD+CE'
+    base_dir = 'outputs/modelwise/FC1_MNIST(subsampe(4000, 1000)+NoAug+0.0Noise)_Parallel_Seed11_ADAM+MSE'
     
     json_rel_path = 'log/results.json'
 
@@ -279,23 +282,8 @@ if __name__ == '__main__':
     results = load_experiment_results(base_dir=base_dir, pattern=dir_pattern, json_path=json_rel_path)
     
     x_axis = 'Parameters' if args.xaxis == 'p' else 'Width'
-    plot_modelwise_dd_curves(results, x_axis=x_axis, x_log=True)
+    plot_modelwise_dd_curves(results, x_axis=x_axis, x_log=True, smoothing_window=0)
     
-    # for s in test_strings:
-    #     print(f"\nProcessing: '{s}'")
-    #     match = dir_pattern.match(s)
-
-    #     if match:
-    #         extracted_first_value_str = match.group(1)
-    #         extracted_p_value = int(match.group(2))
-
-    #         parsed_first_value = parse_extracted_value(extracted_first_value_str)
-
-    #         print(f"  Full match: {match.group(0)}")
-    #         print(f"  Parsed first value: {parsed_first_value} (type: {type(parsed_first_value)})")
-    #         print(f"  Second captured group (p value): {extracted_p_value}")
-    #     else:
-    #         print("  No match.")
 
         
     # dir_pattern = re.compile(r"fc1\|h(\d+)_mog")
@@ -304,51 +292,3 @@ if __name__ == '__main__':
     # dir_pattern = re.compile(r"fc1\|h(\d+)\|p(\d+)") # FC1    
 
 
-
-# h_values = []
-# train_losses = []
-# test_losses = []
-# train_accuracies = []
-# test_accuracies = []
-
-# # results_dir = Path('outputs/results/fc1_mnist')
-# # results_dir = Path('outputs/results/fc1_cifar10')
-# results_dir = Path('outputs/results/cnn5_cifar10')
-
-# for filename in os.listdir(results_dir):
-#     match = re.match(r"res_param(\d+)\.pkl", filename)
-#     if match:
-#         h = int(match.group(1))
-#         with open(results_dir / filename, "rb") as f:
-#             data = pickle.load(f)
-#         h_values.append(h)
-#         train_losses.append(data["train_loss"])
-#         test_losses.append(data["test_loss"])
-#         train_accuracies.append(data["train_acc"])
-#         test_accuracies.append(data["test_acc"])
-
-# sorted_data = sorted(zip(h_values, train_losses, test_losses, train_accuracies, test_accuracies))
-# h_values, train_losses, test_losses, train_accuracies, test_accuracies = zip(*sorted_data)
-
-# fig, axs = plt.subplots(2, 1, figsize=(8, 10))
-
-# axs[0].plot(h_values, train_losses, 'o-r', label='train')
-# axs[0].plot(h_values, test_losses, 'o-b', label='test')
-# axs[0].set_xlabel("Hidden layer size (h)")
-# # axs[0].set_xlabel("CNN Width Parameter (K)")
-# axs[0].set_ylabel("loss")
-# # axs[0].set_xscale('log') 
-# axs[0].legend()
-# axs[0].grid(True)
-
-# axs[1].plot(h_values, train_accuracies, 'o-r', label='train')
-# axs[1].plot(h_values, test_accuracies, 'o-b', label='test')
-# # axs[1].set_xlabel("Hidden layer size (h)")
-# axs[1].set_xlabel("CNN Width Parameter (K)")
-# axs[1].set_ylabel("accuracy")
-# # axs[1].set_xscale('log') 
-# axs[1].legend()
-# axs[1].grid(True)
-
-# plt.tight_layout()
-# plt.show()
