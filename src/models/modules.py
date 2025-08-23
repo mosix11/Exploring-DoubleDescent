@@ -1,11 +1,52 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import os
-import numpy as np
 
-import sys
-from . import nn_utils
+
+class LabelSmoothing(torch.nn.Module):
+    def __init__(self, smoothing=0.0):
+        super(LabelSmoothing, self).__init__()
+        self.confidence = 1.0 - smoothing
+        self.smoothing = smoothing
+
+    def forward(self, x, target):
+        logprobs = torch.nn.functional.log_softmax(x, dim=-1)
+
+        nll_loss = -logprobs.gather(dim=-1, index=target.unsqueeze(1))
+        nll_loss = nll_loss.squeeze(1)
+        smooth_loss = -logprobs.mean(dim=-1)
+        loss = self.confidence * nll_loss + self.smoothing * smooth_loss
+        return loss.mean()
+
+
+def masked_softmax(X, valid_lens):
+    """Perform softmax operation by masking elements on the last axis."""
+
+    # X: 3D tensor, valid_lens: 1D or 2D tensor
+    # 1D valid_lens specifies valid length for each batch However the 2d valid_lens specifies valid lengths also
+    # for each sample in each batch aswell meaning samples in the same batch can have different lengths.
+    def _sequence_mask(X, valid_len, value=0):
+        maxlen = X.size(1)
+        mask = (
+            torch.arange((maxlen), dtype=torch.float32, device=X.device)[None, :]
+            < valid_len[:, None]
+        )
+        X[~mask] = value
+        return X
+
+    if valid_lens is None:
+        return nn.functional.softmax(X, dim=-1)
+    else:
+        shape = X.shape
+        if valid_lens.dim() == 1:
+            valid_lens = torch.repeat_interleave(valid_lens, shape[1])
+        else:
+            valid_lens = valid_lens.reshape(-1)
+        # On the last axis, replace masked elements with a very large negative
+        # value, whose exponentiation outputs 0
+        X = _sequence_mask(X.reshape(-1, shape[-1]), valid_lens, value=-1e6)
+        return nn.functional.softmax(X.reshape(shape), dim=-1)
+
 
 
 def vgg_block_lazy(num_convs, out_channels):
@@ -388,7 +429,7 @@ class DotProductAttention(nn.Module):
         scores = torch.bmm(queries, keys.transpose(1, 2)) / torch.sqrt(
             torch.tensor(d, device=queries.device)
         )
-        self.attention_weights = nn_utils.masked_softmax(scores, valid_lens)
+        self.attention_weights = masked_softmax(scores, valid_lens)
         return torch.bmm(self.dropout(self.attention_weights), values)
 
 
@@ -419,7 +460,7 @@ class AdditiveAttention(nn.Module):
         # one-dimensional entry from the shape. Shape of scores: (batch_size,
         # no. of queries, no. of key-value pairs)
         scores = self.w_v(features).squeeze(-1)
-        self.attention_weights = nn_utils.masked_softmax(scores, valid_lens)
+        self.attention_weights = masked_softmax(scores, valid_lens)
         # Shape of values: (batch_size, no. of key-value pairs, value
         # dimension)
         return torch.bmm(self.dropout(self.attention_weights), values)
@@ -444,7 +485,7 @@ class DiffDimDotProductAttention(nn.Module):  # @save
         scores = torch.bmm(queries, keys.transpose(1, 2)) / torch.sqrt(
             torch.tensor(d, device=queries.device)
         )
-        self.attention_weights = nn_utils.masked_softmax(scores, valid_lens)
+        self.attention_weights = masked_softmax(scores, valid_lens)
         return torch.bmm(self.dropout(self.attention_weights), values)
 
     # def predict_step(self, batch, device, num_steps,

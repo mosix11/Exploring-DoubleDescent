@@ -12,14 +12,13 @@ from tqdm import tqdm
 import requests
 
 import hashlib
-import tarfile
 
-import shutil
-from multiprocessing import cpu_count
+
 
 import logging
 import colorama
 from colorama import Fore, Style
+import seaborn as sns
 
 colorama.init()
 
@@ -49,83 +48,6 @@ def img_is_color(img):
     return False
 
 
-def download_file_fast(url, output_path):
-    """Downloads a file with a progress bar and handles retries."""
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, stream=True, headers=headers)
-    total_size = int(response.headers.get("content-length", 0))
-    chunk_size = 1024 * 1024  # 1MB chunks
-
-    with open(output_path, "wb") as file, tqdm(
-        desc=f"Downloading {os.path.basename(output_path)}",
-        total=total_size,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for data in response.iter_content(chunk_size=chunk_size):
-            file.write(data)
-            bar.update(len(data))
-
-
-def extract_zip(zip_path, extract_to):
-    """Extracts a zip file using the maximum number of available threads."""
-    # Check if p7zip is installed
-    if shutil.which("7z") is None:
-        raise EnvironmentError(
-            "7z command-line utility is required for multi-threaded extraction. Install p7zip."
-        )
-
-    # Run the extraction with maximum threads
-    command = f"7z x -o{extract_to} {zip_path} -mmt{cpu_count()}"
-    os.system(command)
-
-def extract_multi_part_zip(zip_parts, extract_to):
-    """
-    Extracts multi-part zip files using 7z with maximum threads.
-    
-    :param zip_parts: List of zip file parts (e.g., ['file.z01', 'file.z02', ..., 'file.zip'])
-    :param extract_to: Directory where the extracted files should be placed.
-    """
-    if not zip_parts:
-        raise ValueError("No zip parts provided.")
-
-    # Ensure 7z is installed
-    if shutil.which("7z") is None:
-        raise EnvironmentError("7z command-line utility is required for extraction. Install p7zip.")
-
-    # Identify the main zip file (usually the last part or the .zip file itself)
-    zip_parts.sort()  # Ensure they are in order
-    main_zip = next((f for f in zip_parts if f.endswith('.zip')), zip_parts[0])
-
-    # Run extraction command
-    command = f'7z x -o"{extract_to}" "{main_zip}" -mmt{cpu_count()}'
-    os.system(command)
-
-
-def extract_sequential_zip(zip_parts, extract_to):
-    """
-    Extracts multi-part zip files named sequentially (e.g., train_part1.zip, train_part2.zip, ...).
-    
-    :param zip_parts: List of zip file paths (e.g., [Path('train_part1.zip'), Path('train_part2.zip'), ...]).
-    :param extract_to: Directory where the extracted files should be placed.
-    """
-    if not zip_parts:
-        raise ValueError("No zip parts provided.")
-
-    # Ensure 7z is installed
-    if shutil.which("7z") is None:
-        raise EnvironmentError("7z command-line utility is required for extraction. Install p7zip.")
-
-    # Sort files to ensure correct order
-    zip_parts = sorted(zip_parts, key=lambda x: str(x))
-
-    # Use the first file as the entry point for extraction
-    main_zip = zip_parts[0]
-
-    # Run extraction command
-    command = f'7z x -o"{extract_to}" "{main_zip}" -mmt{cpu_count()}'
-    os.system(command)
 
 
 def plot_plt_table(
@@ -495,42 +417,6 @@ class ProgressBoard:
         self.fig.savefig(name + ".png")
 
 
-def download(url, folder="./data", sha1_hash=None):
-    """Download a file to folder and return the local filepath."""
-    if not url.startswith("http"):
-        # For back compatability
-        # url, sha1_hash = DATA_HUB[url]
-        pass
-    os.makedirs(folder, exist_ok=True)
-    fname = os.path.join(folder, url.split("/")[-1])
-    # Check if hit cache
-    if os.path.exists(fname) and sha1_hash:
-        sha1 = hashlib.sha1()
-        with open(fname, "rb") as f:
-            while True:
-                data = f.read(1048576)
-                if not data:
-                    break
-                sha1.update(data)
-        if sha1.hexdigest() == sha1_hash:
-            return fname
-    # Download
-    print(f"Downloading {fname} from {url}...")
-    r = requests.get(url, stream=True, verify=True)
-    with open(fname, "wb") as f:
-        f.write(r.content)
-    return fname
-
-
-
-def check_len(a, n):
-    """Check the length of a list."""
-    assert len(a) == n, f"list's length {len(a)} != expected length {n}"
-
-
-def check_shape(a, shape):
-    """Check the shape of a tensor."""
-    assert a.shape == shape, f"tensor's shape {a.shape} != expected shape {shape}"
 
 
 class Accumulator:
@@ -636,3 +522,216 @@ def describe_structure(obj, depth=0):
     
     else:
         print(f"{indent}{type(obj).__name__}")
+
+
+
+def plot_confusion_matrix(cm, class_names=None, title='Confusion Matrix', color_map='Blues', color_bar=False, 
+                            x_label=None, y_label=None, vmin=None, vmax=None, tick_label_font_size=None,
+                            filepath=None, show=True):
+    """
+    Plots the confusion matrix (for integers) or a similarity matrix (for floats)
+    and optionally saves it to a file and/or displays it.
+
+    Args:
+        cm (np.ndarray or torch.Tensor): The matrix to plot (2D numpy array or torch tensor).
+        class_names (list, optional): A list of class names to display on the axes.
+                                        If None, will use 0, 1, 2...
+        title (str): The title of the plot.
+        color_map (str): Colormap to use for the heatmap. Defaults to 'Blues'.
+        color_bar (bool): If True, a color bar will be displayed. Defaults to False.
+        filepath (str, optional): The path and filename to save the plot.
+                                   If None, the plot will not be saved.
+        show (bool): If True, the plot will be displayed to the user. Defaults to True.
+        vmin (float, optional): The minimum value for the colormap. If provided, overrides
+                                  automatic scaling for the colormap. Useful for fixing the
+                                  range for similarity matrices (e.g., -1 to 1).
+        vmax (float, optional): The maximum value for the colormap. If provided, overrides
+                                  automatic scaling for the colormap. Useful for fixing the
+                                  range for similarity matrices (e.g., -1 to 1).
+    """
+    if filepath is None and not show:
+        print("Warning: Neither 'filepath' is provided nor 'show' is set to True. The plot will not be saved or displayed.")
+        return
+
+    # Convert torch tensor to numpy array if it's a torch tensor
+    if isinstance(cm, torch.Tensor):
+        # Move to CPU if it's on GPU, then convert to numpy
+        cm_np = cm.detach().cpu().numpy()
+    else:
+        cm_np = cm # Assume it's already a numpy array
+
+    # Determine the format string based on the data type of the matrix
+    if np.issubdtype(cm_np.dtype, np.integer):
+        fmt = 'd'  # Integer format for confusion matrices
+        # For integer matrices, if vmin/vmax are not explicitly set, let seaborn determine them
+        # However, if they are set, apply them
+        if vmin is None:
+            vmin_effective = cm_np.min()
+        else:
+            vmin_effective = vmin
+        if vmax is None:
+            vmax_effective = cm_np.max()
+        else:
+            vmax_effective = vmax
+
+    elif np.issubdtype(cm_np.dtype, np.floating):
+        fmt = '.2f'  # Float format with 2 decimal places for similarity matrices
+        # For float matrices, if vmin/vmax are not explicitly set, use the matrix's min/max
+        if vmin is None:
+            vmin_effective = cm_np.min()
+        else:
+            vmin_effective = vmin
+        if vmax is None:
+            vmax_effective = cm_np.max()
+        else:
+            vmax_effective = vmax
+    else:
+        # Fallback for other types, or raise an error if unsupported
+        fmt = '.2f' # Default to float format for safety
+        if vmin is None:
+            vmin_effective = cm_np.min()
+        else:
+            vmin_effective = vmin
+        if vmax is None:
+            vmax_effective = cm_np.max()
+        else:
+            vmax_effective = vmax
+
+    plt.figure(figsize=(8, 6))
+    
+    # Use vmin_effective and vmax_effective for the color mapping
+    ax = sns.heatmap(cm_np, annot=True, fmt=fmt, cmap=color_map, cbar=color_bar,
+                xticklabels=class_names, yticklabels=class_names,
+                vmin=vmin_effective, vmax=vmax_effective)
+    
+    # Set font size for xticklabels and yticklabels
+    if tick_label_font_size is not None:
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=tick_label_font_size)
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, va='center', fontsize=tick_label_font_size)
+    
+    plt.title(title)
+    # Adjust labels based on whether it's integer (likely confusion matrix) or float (likely similarity)
+    if x_label:
+        plt.xlabel(x_label)
+    if y_label:
+        plt.ylabel(y_label)
+    
+    
+    plt.tight_layout()
+
+    if filepath:
+        plt.savefig(filepath, dpi=300)
+    
+    if show:
+        plt.show()
+    
+    plt.close()
+
+    
+    
+    
+def plot_multiple_confusion_matrices(
+    filepaths,
+    titles=None,
+    results=None,
+    main_title='Combined Confusion Matrices',
+    save_filepath=None,
+    show=True
+):
+    """
+    Combines and displays multiple confusion matrix plots vertically in a single figure,
+    with an optional table of performance results at the bottom.
+
+    Args:
+        filepaths (list): A list of paths to the confusion matrix images.
+        titles (list, optional): A list of titles for each confusion matrix.
+                                 Must be the same length as filepaths.
+        results (list, optional): A list of dictionaries, where each dictionary
+                                  specifies the performance metrics for a model
+                                  associated with a confusion matrix.
+                                  Each dictionary should be in the format:
+                                  {'ACC': float, 'Loss': float, 'F1': float}.
+                                  Must be the same length as filepaths.
+        main_title (str): Overall title for the combined figure. Defaults to 'Combined Confusion Matrices'.
+        save_filepath (str, optional): Path to save the combined figure. If None, the figure is not saved.
+        show (bool): If True, display the combined figure. Defaults to True.
+    """
+    num_matrices = len(filepaths)
+    if titles and len(titles) != num_matrices:
+        raise ValueError("The number of titles must match the number of filepaths.")
+    if results and len(results) != num_matrices:
+        raise ValueError("The number of results dictionaries must match the number of filepaths.")
+
+    images = []
+    try:
+        for fp in filepaths:
+            images.append(Image.open(fp))
+    except FileNotFoundError as e:
+        print(f"Error: One or more confusion matrix image files not found. {e}")
+        return
+
+    # Determine figure height based on number of matrices and if a table is included
+    fig_height_per_matrix = 6
+    table_height = 0
+    if results:
+        # Estimate height needed for the table (adjust as needed for more padding)
+        table_height = 0.6 * len(results) + 1.8 # Increased basic estimate per row + header
+        fig, axes = plt.subplots(num_matrices + 1, 1, figsize=(10, num_matrices * fig_height_per_matrix + table_height))
+    else:
+        fig, axes = plt.subplots(num_matrices, 1, figsize=(10, num_matrices * fig_height_per_matrix))
+
+
+    for i, img in enumerate(images):
+        axes[i].imshow(img)
+        axes[i].axis('off')  # Turn off axis labels and ticks for the image
+        if titles and titles[i]:
+            axes[i].text(-0.1, 0.5, titles[i], transform=axes[i].transAxes,
+                         fontsize=12, va='center', ha='right', rotation=90) # Vertical title on the left
+
+    if results:
+        # Prepare data for the table
+        df = pd.DataFrame(results)
+        # Add a 'Model' column for row labels if titles are provided
+        if titles:
+            df.insert(0, 'Model', titles)
+        else:
+            df.insert(0, 'Model', [f'Model {j+1}' for j in range(num_matrices)])
+
+        # Format numerical columns to 3 decimal places
+        for col in df.columns:
+            # Check if the column can be converted to numeric before formatting
+            # This avoids errors if 'Model' column or other non-numeric columns are present
+            if pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = df[col].apply(lambda x: f"{x:.3f}")
+
+        # Create the table
+        table_ax = axes[-1] # The last subplot for the table
+        table_ax.axis('off') # Turn off axis for the table plot
+        
+        # Adjust column widths dynamically
+        num_columns = len(df.columns)
+        col_widths = [1.0 / num_columns] * num_columns
+
+        table = table_ax.table(cellText=df.values,
+                               colLabels=df.columns,
+                               loc='center',
+                               cellLoc='center',
+                               colWidths=col_widths)
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 1.5) # Adjust table scale for more vertical padding (increased from 1.2 to 1.5)
+
+        # Corrected way to set specific cell properties for padding
+        for key, cell in table.get_celld().items():
+            cell.set_height(0.1)  # You can adjust this value to control vertical padding
+
+    fig.suptitle(main_title, fontsize=16, y=0.99 if results else 1.02) # Overall title at the top, adjusted if table exists
+    plt.tight_layout(rect=[0.05, 0.03, 1, 0.96 if results else 0.98]) # Adjust layout to make space for main title and side titles and potentially table
+
+    if save_filepath:
+        plt.savefig(save_filepath, bbox_inches='tight')
+
+    if show:
+        plt.show()
+    
+    plt.close() # Close the figure to free memory

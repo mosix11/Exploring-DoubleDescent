@@ -522,6 +522,12 @@ def train_fc1_mog(outputs_dir: Path):
         prev_exp_name = experiment_name
 
 if __name__ == "__main__":
+    
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True) 
+    torch.set_float32_matmul_precision("high")
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

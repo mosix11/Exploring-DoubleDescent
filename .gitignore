@@ -6,6 +6,8 @@ raytune/
 outputs/
 output/
 backups/
+results/
+logs/
 .vscode/
 .cometml-runs
 ###################
@@ -19,6 +21,8 @@ __pycache__/
 test.py
 test.ipynb
 temp.py
+notes.txt
+testdir
 
 # Compiled source #
 ###################

@@ -1,4 +1,24 @@
+from .base_classification_dataset import BaseClassificationDataset
 from .cifar10 import CIFAR10
+from .cifar100 import CIFAR100
 from .mnist import MNIST
 from .fashion_mnist import FashionMNIST
-from .mog_synthetic import MoGSynthetic, MoGSyntheticDataset
+from .clothing1M import Clothing1M
+from .mog_synthetic import MoGSynthetic
+from .dummy_datasets import DummyClassificationDataset
+from .kmnist import KMNIST
+from .food101 import Food101
+from .flowers102 import Flowers102
+from .country211 import Country211
+from .emnist import EMNIST
+from .oxfordpet import OxfordIIITPet
+from .pcam import PCAM
+from .svhn import SVHN
+from .stanford_cars import StanfordCars
+from .eurosat import EuroSAT
+from . import dataset_wrappers
+from . import dataset_factory
+
+from .clip_templates import get_clip_templates
+
+from . import utils

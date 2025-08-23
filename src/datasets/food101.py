@@ -1,23 +1,16 @@
 import torch
-from torchvision import datasets
 import torchvision as tv
+from torchvision import datasets
 import torchvision.transforms.v2 as transforms
-from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from .base_classification_dataset import BaseClassificationDataset
-from .dataset_wrappers import DatasetWithIndex, LabelRemapper, NoisyClassificationDataset, BinarizedClassificationDataset
-
-import os
-from pathlib import Path
-import random
-import numpy as np
 from typing import Tuple, List, Union, Dict
+from pathlib import Path
 
-class CIFAR100(BaseClassificationDataset):
-    
+class Food101(BaseClassificationDataset):
     def __init__(
         self,
         data_dir: Path = Path("./data").absolute(),
-        img_size: Union[tuple, list] = (32, 32),
+        img_size: Union[tuple, list] = (224, 224),
         grayscale: bool = False,
         normalize_imgs: bool = False,
         flatten: bool = False,
@@ -30,28 +23,29 @@ class CIFAR100(BaseClassificationDataset):
         self.grayscale = grayscale
         self.normalize_imgs = normalize_imgs
         self.flatten = flatten
-        
         self.augmentations = [] if augmentations == None else augmentations
+        
         self.train_transforms = train_transforms
         self.val_transforms = val_transforms
         
         if (train_transforms or val_transforms) and (augmentations != None):
             raise ValueError('You should either pass augmentations, or train and validation transforms.')
         
-        
         data_dir.mkdir(exist_ok=True, parents=True)
-        dataset_dir = data_dir / 'CIFAR100'
+        dataset_dir = data_dir / 'Food101'
         dataset_dir.mkdir(exist_ok=True, parents=True)
         
+        
         super().__init__(
-            dataset_name='CIFAR100',
+            dataset_name='Food101',
             dataset_dir=dataset_dir,
-            num_classes=100,
+            num_classes=101,
             **kwargs,  
         )
-        
+
+
     def load_train_set(self):
-        trainset = datasets.CIFAR100(root=self.dataset_dir, train=True, transform=self.get_transforms(train=True), download=True)
+        trainset = datasets.Food101(root=self.dataset_dir, split="train", transform=self.get_transforms(train=True), download=True)
         self._class_names = trainset.classes
         return trainset
     
@@ -59,7 +53,7 @@ class CIFAR100(BaseClassificationDataset):
         return None
     
     def load_test_set(self):
-        return datasets.CIFAR100(root=self.dataset_dir, train=False, transform=self.get_transforms(train=False), download=True)
+        return datasets.Food101(root=self.dataset_dir, split="test", transform=self.get_transforms(train=False), download=True)
 
     def get_transforms(self, train=True):
         if self.train_transforms and train:
@@ -68,7 +62,7 @@ class CIFAR100(BaseClassificationDataset):
             return self.val_transforms
         
         trnsfrms = []
-        if self.img_size != (32, 32):
+        if self.img_size != (224, 224):
             trnsfrms.append(transforms.Resize(self.img_size))
         if self.grayscale:
             trnsfrms.append(transforms.Grayscale(num_output_channels=1))
@@ -79,20 +73,27 @@ class CIFAR100(BaseClassificationDataset):
             transforms.ToDtype(torch.float32, scale=True),
         ])
         if self.normalize_imgs:
-            mean, std = ((0.5,), (0.5,)) if self.grayscale else ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)) # Values Specific to CIFAR-100
+            mean, std = ((0.5,), (0.5,)) if self.grayscale else ((0.5459, 0.4433, 0.3439), (0.2680, 0.2658, 0.2729))
             trnsfrms.append(transforms.Normalize(mean, std))
         if self.flatten:
             trnsfrms.append(transforms.Lambda(lambda x: torch.flatten(x)))
         return transforms.Compose(trnsfrms)
 
+
     def get_class_names(self):
-        return self._class_names
+        return self._class_names 
 
     def get_identifier(self):
-        identifier = 'cifar100|'
+        identifier = 'food101|'
         # identifier += f'ln{self.label_noise}|'
         identifier += 'aug|' if len(self.augmentations) > 0 else 'noaug|'
         identifier += f'subsample{self.subsample_size}' if self.subsample_size != (-1, -1) else 'full'
         return identifier
     
+    
 
+    
+
+
+
+            
