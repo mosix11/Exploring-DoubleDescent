@@ -7,20 +7,19 @@ from . import PostActResNet9, PostActResNet18, PostActResNet34, PostActResNet50,
 from . import ViT_Small
 from . import TorchvisionModels
 
-from .loss_functions import SupervisedContrastiveLoss, CompoundLoss
-
+import os
 
 def get_metric(metric_name, num_classes):
     if metric_name == 'ACC':
         if num_classes == 2:   
-            return BinaryAccuracy()
+            return BinaryAccuracy(sync_on_compute=_is_distributed())
         else:
-            return MulticlassAccuracy(num_classes=num_classes, average='micro')
+            return MulticlassAccuracy(num_classes=num_classes, average='micro', sync_on_compute=_is_distributed())
     elif metric_name == 'F1':
         if num_classes == 2:
-            return BinaryF1Score()
+            return BinaryF1Score(sync_on_compute=_is_distributed())
         else:
-            return MulticlassF1Score(num_classes=num_classes, average='micro')
+            return MulticlassF1Score(num_classes=num_classes, average='micro', sync_on_compute=_is_distributed())
     else: raise ValueError(f"Invalid metric {metric_name}.")
     
 def create_model(cfg, num_classes=None):
@@ -37,10 +36,7 @@ def create_model(cfg, num_classes=None):
         cfg['loss_fn'] = torch.nn.CrossEntropyLoss(reduction='none')
     elif loss_fn_type == 'BCE':
         cfg['loss_fn'] = torch.nn.BCEWithLogitsLoss()
-    elif loss_fn_type == 'SCL':
-        cfg['loss_fn'] = SupervisedContrastiveLoss(
-            **loss_fn_cfg
-        )
+
         
     else: raise ValueError(f"Invalid loss function {cfg['loss_fn']['type']}.")
     
@@ -110,3 +106,10 @@ def create_model(cfg, num_classes=None):
     else: raise ValueError(f"Invalid model type {model_type}.")
     
     return model
+
+def _is_distributed() -> bool:
+    return int(os.environ.get("WORLD_SIZE", "1")) > 1
+
+
+def _get_local_rank() -> int:
+    return int(os.environ.get("LOCAL_RANK", "0"))
