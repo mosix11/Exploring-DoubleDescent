@@ -6,6 +6,8 @@ from torch.utils.data import Dataset, DataLoader, random_split, Subset
 from .base_classification_dataset import BaseClassificationDataset
 from .dataset_wrappers import DatasetWithIndex, LabelRemapper, NoisyClassificationDataset, BinarizedClassificationDataset
 
+import torch.distributed as dist
+
 import os
 from pathlib import Path
 import random
@@ -33,8 +35,8 @@ class FashionMNIST(BaseClassificationDataset):
         self.flatten = flatten
         self.augmentations = [] if augmentations == None else augmentations
         
-        self.train_transforms = train_transforms
-        self.val_transforms = val_transforms
+        self._train_transforms = train_transforms
+        self._val_transforms = val_transforms
         
         if (train_transforms or val_transforms) and (augmentations != None):
             raise ValueError('You should either pass augmentations, or train and validation transforms.')
@@ -51,22 +53,43 @@ class FashionMNIST(BaseClassificationDataset):
         )
 
     def load_train_set(self):
-        trainset = datasets.FashionMNIST(root=self.dataset_dir, train=True, transform=self.get_transforms(train=True), download=True)
+        self.train_transforms = self.get_transforms(train=True)
+        root = self.dataset_dir
+
+        if self.is_distributed():
+            if self.is_node_leader():
+                _ = datasets.FashionMNIST(root=root, train=True, download=True)  # pre-download only
+            dist.barrier()
+            trainset = datasets.FashionMNIST(root=root, train=True, transform=self.train_transforms, download=False)
+        else:
+            trainset = datasets.FashionMNIST(root=root, train=True, transform=self.train_transforms, download=True)
+
         self._class_names = trainset.classes
         return trainset
-    
+
     def load_validation_set(self):
         return None
-    
+
     def load_test_set(self):
-        return datasets.FashionMNIST(root=self.dataset_dir, train=False, transform=self.get_transforms(train=False), download=True)
+        self.val_transforms = self.get_transforms(train=False)
+        root = self.dataset_dir
+
+        if self.is_distributed():
+            if self.is_node_leader():
+                _ = datasets.FashionMNIST(root=root, train=False, download=True)  # pre-download only
+            dist.barrier()
+            testset = datasets.FashionMNIST(root=root, train=False, transform=self.val_transforms, download=False)
+        else:
+            testset = datasets.FashionMNIST(root=root, train=False, transform=self.val_transforms, download=True)
+
+        return testset
 
 
     def get_transforms(self, train=True):
-        if self.train_transforms and train:
-            return self.train_transforms
-        elif self.val_transforms and not train:
-            return self.val_transforms
+        if self._train_transforms and train:
+            return self._train_transforms
+        elif self._val_transforms and not train:
+            return self._val_transforms
         
         trnsfrms = []
         if self.img_size != (28, 28):

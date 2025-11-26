@@ -7,9 +7,11 @@ from torch.amp import autocast
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, CosineAnnealingLR, OneCycleLR
 from .custom_lr_schedulers import InverseSquareRootLR, CosineAnnealingWithWarmup
 
-
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 import os
+import warnings
 from pathlib import Path
 import time
 from tqdm import tqdm
@@ -38,7 +40,6 @@ class BaseClassificationTrainer(ABC):
     def __init__(
         self,
         outputs_dir: Path = Path("./outputs"),
-        dotenv_path: Path = Path("./.env"),
         max_epochs: int = None,
         max_iterations: int = None,
         optimizer_cfg: dict = {
@@ -54,7 +55,7 @@ class BaseClassificationTrainer(ABC):
         run_on_gpu: bool = True,
         use_amp: bool = True,
         log_comet: bool = False,
-        comet_api_key: str = "",
+        comet_api_key: str = None,
         comet_project_name: str = None,
         exp_name: str = None,
         exp_tags: List[str] = None,
@@ -63,30 +64,23 @@ class BaseClassificationTrainer(ABC):
     ):
         outputs_dir.mkdir(exist_ok=True)
         self.outputs_dir = outputs_dir
-        self.log_dir = outputs_dir / Path(exp_name) / Path('log')
-        self.log_dir.mkdir(exist_ok=True, parents=True)
-        self.checkpoint_dir = outputs_dir / Path(exp_name) / Path('checkpoint')
-        self.checkpoint_dir.mkdir(exist_ok=True, parents=True)
+        self._log_dir = outputs_dir / Path(exp_name) / Path('log')
+        self._log_dir.mkdir(exist_ok=True, parents=True)
+        self._checkpoint_dir = outputs_dir / Path(exp_name) / Path('checkpoint')
+        self._checkpoint_dir.mkdir(exist_ok=True, parents=True)
+        self._weights_dir = outputs_dir / Path(exp_name) / Path("weights")
+        self._weights_dir.mkdir(exist_ok=True, parents=True)
+        self._plots_dir = outputs_dir / Path(exp_name) / Path("plots")
+        self._plots_dir.mkdir(exist_ok=True, parents=True)
         
-        if dotenv_path.exists():
-            dotenv.load_dotenv('.env')
-            
+
         if seed:
             self.seed = seed
-            random.seed(seed)
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
+            self.generator = torch.Generator().manual_seed(self.seed)
 
         
-        
-        self.cpu = utils.get_cpu_device()
-        self.gpu = utils.get_gpu_device()
-        if self.gpu == None and run_on_gpu:
-            raise RuntimeError("""GPU device not found!""")
-        self.run_on_gpu = run_on_gpu
+        self._run_on_gpu = run_on_gpu
         self.use_amp = use_amp
-
 
 
         self.max_epochs = max_epochs
@@ -123,12 +117,14 @@ class BaseClassificationTrainer(ABC):
         self.log_comet = log_comet
         self.comet_api_key = comet_api_key
         if log_comet and not comet_api_key:
-            raise ValueError('When `log_comet` is set to `True`, `comet_api_key` should be provided.\n Please put your comet api key in a file called `.env` in the root directory of the project with the variable name `COMET_API_KEY`')
+            print('When `log_comet` is set to `True`, `comet_api_key` should be provided.\n Please put your comet api key in a file called `.env` in the root directory of the project with the variable name `COMET_API_KEY`')
+            self.log_comet = False
         self.comet_project_name = comet_project_name
         self.exp_name = exp_name
         self.exp_tags = exp_tags
         if log_comet and comet_project_name is None:
-            raise RuntimeError('When CometML logging is active, the `comet_project_name` must be specified.')
+            print('When CometML logging is active, the `comet_project_name` must be specified.')
+            self.log_comet = False
         self.model_log_call = model_log_call
           
           
@@ -158,8 +154,26 @@ class BaseClassificationTrainer(ABC):
         """
         pass
       
+    
+    
+    def _setup_device(self):
+        if self._run_on_gpu:
+            if self.is_distributed():
+                self.device = torch.device(f"cuda:{self.get_local_rank()}")
+            else:
+                devices = utils.get_gpu_device()
+                if devices == None:
+                    raise RuntimeError('No GPU devices detected. Set `run_on_gpu` to False.')
+                elif isinstance(devices, dict):
+                    warnings.warn(f'Multiple GPU devices where found: {str(devices)}. Using device:0.')
+                    self.device = devices['0']
+                else:
+                    self.device = devices
+        else:
+            self.device = utils.get_cpu_device()
+
         
-    def setup_data_loaders(self, dataset):
+    def _setup_data_loaders(self, dataset):
         self.dataset = dataset
         self.train_dataloader = dataset.get_train_dataloader()
         self.val_dataloader = dataset.get_val_dataloader()
@@ -171,22 +185,28 @@ class BaseClassificationTrainer(ABC):
         self.num_test_batches = len(self.test_dataloader)
         
         
-    def prepare_model(self, state_dict=None):
+    def _prepare_model(self, state_dict=None):
         if state_dict:
             self.model.load_state_dict(state_dict)
-        if self.run_on_gpu:
-            self.model.to(self.gpu)
+
+        self.model.to(self.device)
+
+        if self.is_distributed():
+            # IMPORTANT: wrap AFTER .to(device) and BEFORE creating optimizer
+            self.model = DDP(self.model, device_ids=[self.device.index], output_device=self.device.index, find_unused_parameters=False)
+            
+    def _mm(self):  # "model module"
+        return self.model.module if isinstance(self.model, DDP) else self.model
         
-    def prepare_batch(self, batch):
-        if self.run_on_gpu:
-            batch = [tens.to(self.gpu) for tens in batch]
-            return batch
-        else: return batch
+    def _prepare_batch(self, batch):
+        batch = [tens.to(self.device, non_blocking=True) for tens in batch]
+        return batch
+
         
         
     
     
-    def configure_optimizers(self, optim_state_dict=None, last_epoch=-1, last_gradient_step=-1):
+    def _configure_optimizers(self, optim_state_dict=None, last_epoch=-1, last_gradient_step=-1):
         optim_cfg = copy.deepcopy(self.optimizer_cfg)
         del optim_cfg['type']
 
@@ -267,7 +287,10 @@ class BaseClassificationTrainer(ABC):
         
         
         
-    def configure_logger(self, experiment_key=None):
+    def _configure_logger(self, experiment_key=None):
+        if not self.is_main():
+            self.log_comet = False
+            return
         experiment_config = comet_ml.ExperimentConfig(
             name=self.exp_name,
             tags=self.exp_tags
@@ -280,13 +303,15 @@ class BaseClassificationTrainer(ABC):
             online=True,
             experiment_config=experiment_config
         )
-        with open(self.log_dir / Path('comet_exp_key'), 'w') as mfile:
+        with open(self._log_dir / Path('comet_exp_key'), 'w') as mfile:
             mfile.write(self.comet_experiment.get_key()) 
 
 
-    def save_full_checkpoint(self, path):
+    def _save_full_checkpoint(self, path):
+        if not self.is_main():
+            return
         save_dict = {
-            'model_state': self.model.state_dict(),
+            'model_state': self._mm().state_dict(),
             'optim_state': self.optim.state_dict(),
             'epoch': self.epoch+1,
             'global_step': self.global_step,
@@ -298,18 +323,20 @@ class BaseClassificationTrainer(ABC):
             save_dict['best_prf'] = self.best_model_perf
         torch.save(save_dict, path)
         
-    def load_full_checkpoint(self, path):
-        checkpoint = torch.load(path, map_location=self.cpu)
-        self.prepare_model(checkpoint["model_state"])
+        
+    def _load_full_checkpoint(self, path):
+        checkpoint = torch.load(path, map_location=self.device)
+        
+        self._prepare_model(checkpoint["model_state"])
         self.iteration_mode = checkpoint.get('iteration_mode', False)
         self.global_step = checkpoint.get('global_step', 0)
         
-        self.configure_optimizers(
+        self._configure_optimizers(
             checkpoint["optim_state"], last_epoch=checkpoint["epoch"], last_gradient_step=self.global_step 
         )
         self.epoch = checkpoint["epoch"]
         if self.log_comet:
-            self.configure_logger(checkpoint["exp_key"])
+            self._configure_logger(checkpoint["exp_key"])
             
         if 'best_prf' in checkpoint:
             self.best_model_perf = checkpoint['best_prf']
@@ -320,58 +347,79 @@ class BaseClassificationTrainer(ABC):
         This is the main "template method". It orchestrates the training process.
         DO NOT OVERRIDE THIS METHOD.
         """
-        self.setup_data_loaders(dataset)
+        self._setup_device()
+        
+        self._setup_data_loaders(dataset)
         self.model = model
         if resume:
-            ckp_path = self.checkpoint_dir / Path('resume_ckp.pth')
+            ckp_path = self._checkpoint_dir / Path('resume_ckp.pth')
             if not ckp_path.exists():
                 raise RuntimeError(
                     "There is no checkpoint saved! Set the `resume` flag to False."
                 )
-            self.load_full_checkpoint(ckp_path)
+            self._load_full_checkpoint(ckp_path)
         else:
-            self.prepare_model()
-            self.configure_optimizers()
+            self._prepare_model()
+            self._configure_optimizers()
             if self.log_comet:
-                self.configure_logger()
+                self._configure_logger()
             self.epoch = 0
             self.global_step = 0   
 
         self.grad_scaler = GradScaler("cuda", enabled=self.use_amp)
         self.early_stopping_activated = False
             
-        if self.iteration_mode:
-            outer_iterable = range(self.epoch, 10**12)  # effectively unbounded; we'll break on max_iterations
-        else:
-            outer_iterable = tqdm(range(self.epoch, self.max_epochs), total=self.max_epochs)
-
-
-            
-        for self.epoch in outer_iterable:
-            if (not self.iteration_mode) and isinstance(outer_iterable, tqdm):
-                outer_iterable.set_description(f"Processing Training Epoch {self.epoch + 1}/{self.max_epochs}")
+        self._tqdm_bar = None
+        if self.is_main():
+            if self.iteration_mode:
+                remaining = self.max_iterations - self.global_step
+                self._tqdm_bar = tqdm(
+                    total=remaining,
+                    desc="Training (steps)",
+                    dynamic_ncols=True
+                )
+            else:
+                remaining_epochs = self.max_epochs - self.epoch
+                self._tqdm_bar = tqdm(
+                    total=remaining_epochs,
+                    desc=f"Training (epochs)",
+                    dynamic_ncols=True
+                )
                 
-            if self.early_stopping and self.early_stopping_activated: break
+        outer_iterable = range(self.epoch, 10**12) if self.iteration_mode else range(self.epoch, self.max_epochs)
+        try:
+            for self.epoch in outer_iterable:
+                if self.is_distributed():
+                    self.train_dataloader.sampler.set_epoch(self.epoch)
 
-            # Call the abstract training method (implemented by subclass)
-            statistics = self._fit_epoch()
-            
-            
-            if self.model_log_call:
-                model_logs = self.model.log_stats()
-                statistics.update(model_logs)
-            
-            
-            self.after_epoch_end(
-                epoch_train_stats=statistics,
-                epoch_train_loss=statistics.get('Train/Loss') if isinstance(statistics, dict) else None
-            )
+                if self.early_stopping and self.early_stopping_activated:
+                    break
                 
-           
-            if self.iteration_mode and self.global_step >= self.max_iterations:
-                break
+                statistics = self._fit_epoch()
+
+                if self.model_log_call:
+                    model_logs = self._mm().log_stats()
+                    statistics.update(model_logs)
+
+                self.after_epoch_end(
+                    epoch_train_stats=statistics,
+                    epoch_train_loss=statistics.get('Train/Loss') if isinstance(statistics, dict) else None
+                )
+
+                if (not self.iteration_mode) and self.is_main() and self._tqdm_bar is not None:
+                    self._tqdm_bar.update(1)
+                    self._tqdm_bar.set_postfix_str(f"loss={statistics.get('Train/Loss'):.4f}")
+
+                if self.iteration_mode and self.global_step >= self.max_iterations:
+                    break
+        finally:
+            if self._tqdm_bar is not None:
+                self._tqdm_bar.close()
 
         print('Training is finished!')
+        # torch.save(self._mm().state_dict(), self._weights_dir / Path("final_weights.pth"))  
+        print('Final model\'s weights are saved!')
+        
         # Final evaluation, saving, etc.
         final_results = {}
         final_results.update(self.evaluate(set='Train'))
@@ -393,12 +441,11 @@ class BaseClassificationTrainer(ABC):
             self.comet_experiment.log_parameters(results, nested_support=True)
             self.comet_experiment.end()
         
-        # final_ckp_path = self.checkpoint_dir / Path('final_ckp.pth')
-        # self.save_full_checkpoint(final_ckp_path)
-        results_path = self.log_dir / Path('results.json')
+        results_path = self._log_dir / Path('results.json')
         
-        with open(results_path, 'w') as json_file:
-            json.dump(results, json_file, indent=4)
+        if self.is_main():
+            with open(results_path, 'w') as f:
+                json.dump(results, f, indent=4)
         
         return results
                    
@@ -415,10 +462,9 @@ class BaseClassificationTrainer(ABC):
         - Stepping per-step schedulers (including ReduceLROnPlateau with step metric)
         - Iteration-mode validation and checkpoint triggers
         """
-        # 1) Count step
+
         self.global_step += 1
 
-        # 2) LR scheduler (per-step)
         if self.lr_scheduler and self.lr_sch_step_on_batch:
             if isinstance(self.lr_scheduler, ReduceLROnPlateau):
                 # If user chose per-step plateau (unusual), feed the current step loss
@@ -428,7 +474,22 @@ class BaseClassificationTrainer(ABC):
             else:
                 self.lr_scheduler.step()
 
-        # 3) Iteration-mode triggers
+        
+        if self.iteration_mode and self.is_main() and self._tqdm_bar is not None:
+            # prevent over-update when resuming near the end
+            remaining = self.max_iterations - (self._tqdm_bar.n + 1)
+            self._tqdm_bar.update(1 if remaining >= 0 else 0)
+            try:
+                loss = train_snapshot.get('Train/Loss', None)
+                postfix = []
+                if loss is not None:
+                    postfix.append(f"loss={loss:.4f}")
+                if postfix:
+                    self._tqdm_bar.set_postfix_str(", ".join(postfix))
+            except Exception:
+                pass
+        
+        
         if self.iteration_mode:
             # Validation on step frequency
             if self._should_validate_now():
@@ -437,7 +498,7 @@ class BaseClassificationTrainer(ABC):
 
             # Checkpoint on step frequency
             if self._should_checkpoint_now():
-                self.save_full_checkpoint(self.checkpoint_dir / 'resume_ckp.pth')
+                self._save_full_checkpoint(self._checkpoint_dir / 'resume_ckp.pth')
 
         if self.log_comet and self.iteration_mode:
             self.comet_experiment.log_metrics(train_snapshot, step=self.global_step)
@@ -463,7 +524,7 @@ class BaseClassificationTrainer(ABC):
 
             # Checkpoint on epoch frequency
             if self._should_checkpoint_now():
-                self.save_full_checkpoint(self.checkpoint_dir / 'resume_ckp.pth')
+                self._save_full_checkpoint(self._checkpoint_dir / 'resume_ckp.pth')
 
             # LR scheduler (per-epoch)
             if self.lr_scheduler and not self.lr_sch_step_on_batch:
@@ -485,8 +546,8 @@ class BaseClassificationTrainer(ABC):
         """
         Public-facing evaluation method.
         """
-        self.model.eval()
-        self.model.reset_metrics()
+        self._mm().eval()
+        self._mm().reset_metrics()
         
         if set == 'Train':
             dataloader = self.train_dataloader
@@ -505,6 +566,24 @@ class BaseClassificationTrainer(ABC):
         # Add the set name prefix to the metrics
         return {f"{set}/{k}": v for k, v in metrics.items()}    
     
+    
+    def is_distributed(self):
+        return dist.is_available() and dist.is_initialized()
+    
+    def is_main(self):
+        return (not self.is_distributed()) or (dist.get_rank() == 0)
+
+    def get_rank(self):
+        return dist.get_rank()
+    
+    def get_local_rank(self) -> int:
+        return int(os.environ.get("LOCAL_RANK", "0"))
+    
+    def is_node_leader(self):
+        if not self.is_distributed():
+            return True
+        local_world_size = torch.cuda.device_count()
+        return dist.get_rank() % local_world_size == 0
     
     
     def _compute_total_steps(self) -> int:
@@ -570,7 +649,7 @@ class BaseClassificationTrainer(ABC):
             merged['epoch'] = getattr(self, 'epoch', 0)
             merged['global_step'] = getattr(self, 'global_step', 0)
             self.best_model_perf = merged
-            self.save_full_checkpoint(self.checkpoint_dir / 'best_ckp.pth')
+            self._save_full_checkpoint(self._checkpoint_dir / 'best_ckp.pth')
                 
             
             

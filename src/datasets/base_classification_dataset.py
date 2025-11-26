@@ -1,10 +1,15 @@
 import torch
+import torchvision
 from torchvision import datasets
 import torchvision.transforms.v2 as transforms
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 
-from .dataset_wrappers import DatasetWithIndex, LabelRemapper, NoisyClassificationDataset, BinarizedClassificationDataset
+import torch.distributed as dist
+
+from .dataset_wrappers import DatasetWithIndex, LabelRemapper, NoisyClassificationDataset, BinarizedClassificationDataset, PoisonedClassificationDataset
 from .custom_samplers import ClassBalancedBatchSampler
+
+from torch.utils.data.distributed import DistributedSampler
 
 import os
 from pathlib import Path
@@ -57,10 +62,6 @@ class BaseClassificationDataset(ABC):
         self.generator = None
         if seed:
             self.seed = seed
-            random.seed(seed)
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
             self.generator = torch.Generator().manual_seed(self.seed)
 
         self._init_loaders()
@@ -108,11 +109,29 @@ class BaseClassificationDataset(ABC):
         """
         pass
         
+    def is_distributed(self):
+        return dist.is_available() and dist.is_initialized()
+    
+    def is_main(self):
+        return (not self.is_distributed()) or (dist.get_rank() == 0)
+
+    def get_rank(self):
+        return dist.get_rank()
+    
+    def get_local_rank(self) -> int:
+        return int(os.environ.get("LOCAL_RANK", "0"))
+    
+    def is_node_leader(self):
+        if not self.is_distributed():
+            return True
+        local_world_size = torch.cuda.device_count()
+        return dist.get_rank() % local_world_size == 0
+    
     def get_train_dataloader(self):
         return self.train_loader
     
-    def reset_train_dl(self):
-        self.train_loader = self._build_dataloader(self.trainset, shuffle=True, use_balanced_batch_sampler=True if self.use_balanced_batch_sampler else False)
+    def reset_train_dl(self, shuffle=True):
+        self.train_loader = self._build_dataloader(self.trainset, shuffle=shuffle, use_balanced_batch_sampler=True if self.use_balanced_batch_sampler else False)
 
     def get_val_dataloader(self):
         return self.val_loader
@@ -134,9 +153,9 @@ class BaseClassificationDataset(ABC):
     def get_valset(self):
         return self.valset
     
-    def set_valset(self, set):
+    def set_valset(self, set, shuffle=False):
         self.valset = set
-        self.val_loader = self._build_dataloader(self.valset, shuffle=False)
+        self.val_loader = self._build_dataloader(self.valset, shuffle=shuffle)
     
     def get_testset(self):
         return self.testset
@@ -151,6 +170,17 @@ class BaseClassificationDataset(ABC):
     def set_heldoutset(self, set, shuffle=False):
         self.heldout_set = set
         self.heldout_loader = self._build_dataloader(self.heldout_set, shuffle=shuffle)
+        
+    def get_train_indices(self):
+        if not self.heldout_set:
+            raise RuntimeError('Dataset has no heldout conf.')
+        else:
+            return self.train_indices
+    def get_heldout_indices(self):
+        if not self.heldout_set:
+            raise RuntimeError('Dataset has no heldout conf.')
+        else:
+            return self.heldout_indices
         
             
     def get_generator(self):
@@ -167,6 +197,14 @@ class BaseClassificationDataset(ABC):
     
     def get_num_classes(self):
         return len(self.available_classes)
+    
+    def get_normalization_stats(self):
+        import torchvision.transforms.v2 as transformsv2
+        import torchvision.transforms as transformsv1
+        for t in self.train_transforms.transforms:
+            if isinstance(t, (transformsv1.Normalize, transformsv2.Normalize)):
+                return (t.mean, t.std)
+        return None
     
     def subset_set(self, set='Train', indices=[]):
         dataset = self._get_set(set)
@@ -193,7 +231,7 @@ class BaseClassificationDataset(ABC):
         dataset = BinarizedClassificationDataset(dataset, target_class)
         self._set_set(set, dataset)
         
-    def inject_noise(self, set='Train', noise_rate=0.0, noise_type='symmetric', T_mat=None, target_class=None, seed=None, generator=None):
+    def inject_noise(self, set='Train', **kwargs):
         dataset = self._get_set(set)
         
         if isinstance(dataset, Subset):
@@ -208,14 +246,9 @@ class BaseClassificationDataset(ABC):
         dataset = NoisyClassificationDataset(
             dataset=dataset,
             dataset_name=self.__class__.__name__,
-            noise_rate=noise_rate,
-            noise_type=noise_type,
-            T_mat=T_mat,
-            seed=seed,
             num_classes=len(self.available_classes),
-            target_class=target_class,
             available_labels=self.class_subset,
-            generator=generator
+            **kwargs
         )
         
         if self.remap_labels and self.class_subset:
@@ -225,10 +258,58 @@ class BaseClassificationDataset(ABC):
         
         self._set_set(set, dataset)
         
+    def inject_poison(
+        self,
+        set: str = 'Train',
+        rate: float = 0.1,
+        target_class: int = 0,
+        trigger_percent: float = 0.003,
+        margin: Union[int, Tuple[int, int]] = 0,
+        seed: int = None,
+        generator: torch.Generator = None,
+    ):
+        """
+        Injects a BadNets-style trigger into a fraction of samples in the chosen split.
+        For poisoned samples, relabels to `target_class` (default: 0).
+        The trigger sets exactly `trigger_percent` of pixels to white at the bottom-right.
+
+        IMPORTANT: Poison is applied on RAW samples (pre-transform), and then the
+        original transform (from the underlying torchvision dataset) is applied.
+        """
+        dataset = self._get_set(set)
+
+
+        if isinstance(dataset, Subset):
+            while isinstance(dataset.dataset, (LabelRemapper, DatasetWithIndex)):
+                dataset.dataset = dataset.dataset.dataset
+        else:
+            while isinstance(dataset, (LabelRemapper, DatasetWithIndex)):
+                dataset = dataset.dataset
+
+        # --- Wrap with PoisonedClassificationDataset (handles transform swapping internally) ---
+        poisoned_ds = PoisonedClassificationDataset(
+            dataset=dataset,
+            rate=rate,
+            target_class=target_class,
+            trigger_percent=trigger_percent,
+            margin=margin,
+            transforms=self.train_transforms,
+            seed=seed,
+            generator=generator,
+        )
+
+        # If we are remapping labels and using a class subset, apply LabelRemapper after poisoning.
+        if self.remap_labels and self.class_subset:
+            poisoned_ds = LabelRemapper(poisoned_ds, self.label_mapping)
+
+        # DatasetWithIndex last (so your loaders see (x, y, idx, is_poisoned))
+        poisoned_ds = DatasetWithIndex(poisoned_ds)
+
+        self._set_set(set, poisoned_ds)
         
+    
     def get_clean_noisy_subsets(self, set='Train'):
         dataset = self._get_set(set)
-        
         clean_indices = []
         noisy_indices = []
         for item in dataset:
@@ -243,6 +324,18 @@ class BaseClassificationDataset(ABC):
         
         return Subset(dataset, clean_indices), Subset(dataset, noisy_indices)
     
+
+    def switch_labels_to_clean(self, noisy_set:Dataset):
+        dummy_instance = noisy_set
+        while not isinstance(dummy_instance, (NoisyClassificationDataset, PoisonedClassificationDataset)):
+            dummy_instance = dummy_instance.dataset
+        dummy_instance.switch_to_clean_lables()
+
+    def switch_labels_to_noisy(self, clean_set:Dataset):
+        dummy_instance = clean_set
+        while not isinstance(dummy_instance, (NoisyClassificationDataset, PoisonedClassificationDataset)):
+            dummy_instance = dummy_instance.dataset
+        dummy_instance.switch_to_noisy_lables()
     
     def _init_loaders(self):
         train_dataset = self.load_train_set()
@@ -274,6 +367,7 @@ class BaseClassificationDataset(ABC):
         
         if val_dataset != None:
             valset = val_dataset
+            trainset = train_dataset
         else:
             if self.valset_ratio > 0.0 and len(train_dataset) > 1:
                 trainset, valset = random_split(train_dataset, [self.trainset_ratio, self.valset_ratio], generator=self.generator)
@@ -290,7 +384,7 @@ class BaseClassificationDataset(ABC):
             if heldout_set: heldout_set = LabelRemapper(heldout_set, self.label_mapping)
 
         
-        trainset = DatasetWithIndex(train_dataset)
+        trainset = DatasetWithIndex(trainset)
         if valset: valset = DatasetWithIndex(valset)
         test_dataset = DatasetWithIndex(test_dataset)
         if heldout_set: heldout_set = DatasetWithIndex(heldout_set)
@@ -330,6 +424,7 @@ class BaseClassificationDataset(ABC):
             return DataLoader(
                 dataset,
                 batch_sampler=sampler,
+                sampler=DistributedSampler(dataset) if self.is_distributed() else None,
                 num_workers=self.num_workers,
                 pin_memory=True,
                 generator=self.generator,
@@ -339,11 +434,22 @@ class BaseClassificationDataset(ABC):
             return DataLoader(
                 dataset,
                 batch_size=self.batch_size,
-                shuffle=shuffle,
+                shuffle=None if self.is_distributed() else shuffle,
+                sampler=DistributedSampler(
+                    dataset,
+                    shuffle=shuffle,
+                    seed=self.seed,
+                    
+                ) if self.is_distributed() else None,
                 num_workers=self.num_workers,
                 pin_memory=True,
                 generator=self.generator,
             )
+
+    
+    
+    
+    
         
     def _get_balanced_subset(self, dataset: Dataset, total_size: int, class_subset: list, generator: torch.Generator) -> Subset:
         num_classes = len(class_subset)
@@ -427,6 +533,8 @@ class BaseClassificationDataset(ABC):
 
         train_view_indices = [i for i in indices_in_view if i not in heldout_view_indices]
         
+        self.train_indices = train_view_indices
+        self.heldout_indices = heldout_view_indices
         return Subset(dataset, train_view_indices), Subset(dataset, heldout_view_indices)
         
     def _get_set(self, set):

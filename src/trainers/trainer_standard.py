@@ -36,24 +36,20 @@ class StandardTrainer(BaseClassificationTrainer):
         """
         Implementation of the training loop for a single epoch.
         """
+        
+        self._mm().train()
+        
         epoch_train_loss = misc_utils.AverageMeter()
 
         inner_iter = enumerate(self.train_dataloader)
-        if self.iteration_mode:
-            inner_iter = tqdm(
-                enumerate(self.train_dataloader),
-                total=self.num_train_batches,
-                desc=f"Epoch {self.epoch + 1} — steps",
-            )
 
         for i, batch in inner_iter:
-            batch = self.prepare_batch(batch)
+            batch = self._prepare_batch(batch)
             input_batch, target_batch, idxs, is_noisy  = self.unpack_batch(batch)
             
             self.optim.zero_grad()
                     
-                
-            loss = self.model.training_step(input_batch, target_batch, self.use_amp)
+            loss = self._mm().training_step(input_batch, target_batch, self.use_amp)
             
             if self.use_amp:
                 self.grad_scaler.scale(loss).backward()
@@ -83,8 +79,8 @@ class StandardTrainer(BaseClassificationTrainer):
             
             
 
-        metrics_results = self.model.compute_metrics()
-        self.model.reset_metrics()
+        metrics_results = self._mm().compute_metrics()
+        self._mm().reset_metrics()
         
         metrics_results = {f"Train/{k}": v for k, v in metrics_results.items()}
         metrics_results['Train/Loss'] = epoch_train_loss.avg
@@ -99,17 +95,17 @@ class StandardTrainer(BaseClassificationTrainer):
         loss_met = misc_utils.AverageMeter()
         
         for batch in dataloader:
-            batch = self.prepare_batch(batch)
+            batch = self._prepare_batch(batch)
             input_batch, target_batch, _, _ = self.unpack_batch(batch)
             
             # Model-specific validation logic
-            loss = self.model.validation_step(input_batch, target_batch, self.use_amp)
-            if self.model.loss_fn.reduction == 'none':
+            loss = self._mm().validation_step(input_batch, target_batch, self.use_amp)
+            if self._mm().loss_fn.reduction == 'none':
                 loss = loss.mean()
             loss_met.update(loss.detach().cpu().item(), n=input_batch.shape[0])
         
-        metrics_results = self.model.compute_metrics()
-        self.model.reset_metrics()
+        metrics_results = self._mm().compute_metrics()
+        self._mm().reset_metrics()
             
         metrics_results['Loss'] = loss_met.avg
         return metrics_results
@@ -117,7 +113,7 @@ class StandardTrainer(BaseClassificationTrainer):
     
     def confmat(self, set='Val'):
         num_classes = self.dataset.get_num_classes()
-        self.model.eval()
+        self._mm().eval()
         
         dataloader = None
         if set == 'Train':
@@ -130,16 +126,15 @@ class StandardTrainer(BaseClassificationTrainer):
             raise ValueError("Invalid set specified. Choose 'Train', 'Val', or 'Test'.")
         
         
-        cm_metric = MulticlassConfusionMatrix(num_classes=num_classes)
-        if self.run_on_gpu:
-            cm_metric.to(self.gpu)
+        cm_metric = MulticlassConfusionMatrix(num_classes=num_classes, sync_on_compute=self.is_distributed())
+        cm_metric.to(self.device)
         
         for i, batch in enumerate(dataloader):
-            batch = self.prepare_batch(batch)
+            batch = self._prepare_batch(batch)
             input_batch, target_batch, idxs, is_noisy = self.unpack_batch(batch)
             
-            model_output = self.model.predict(input_batch) # Get raw model output (logits)
-            predictions = torch.argmax(model_output, dim=-1) # Get predicted class labels
+            model_output = self._mm().predict(input_batch)
+            predictions = torch.argmax(model_output, dim=-1) 
             
             cm_metric.update(predictions.detach(), target_batch.detach())
         

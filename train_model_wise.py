@@ -1,7 +1,7 @@
 import comet_ml
-from src.datasets import MNIST, CIFAR10, FashionMNIST, MoGSynthetic
-from src.models import FC1, CNN5
-from src.trainers import TrainerEp, TrainerGS
+from src.datasets import dataset_factory
+from src.models import model_factory
+from src.trainers import StandardTrainer
 import matplotlib.pyplot as plt
 from src.utils import nn_utils
 import torch
