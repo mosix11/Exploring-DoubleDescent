@@ -5,9 +5,6 @@ from . import (
     FashionMNIST,
     MoGSynthetic,
     DummyClassificationDataset,
-    Clothing1M,
-)
-from . import (
     KMNIST,
     Food101,
     Flowers102,
@@ -17,17 +14,14 @@ from . import (
     PCAM,
     SVHN,
     StanfordCars,
-)
-from . import EuroSAT
+    EuroSAT
+) 
 import copy
 
 
-def create_dataset(cfg, augmentations=None):
+def create_dataset(cfg):
     cfg_cpy = copy.deepcopy(cfg)
     dataset_name = cfg_cpy.pop("name")
-
-    if augmentations:
-        cfg_cpy["augmentations"] = augmentations
 
     if dataset_name == "mnist":
         num_classes = cfg_cpy.pop("num_classes")
@@ -44,9 +38,6 @@ def create_dataset(cfg, augmentations=None):
     elif dataset_name == "mog":
         num_classes = cfg_cpy.pop("num_classes")
         dataset = MoGSynthetic(**cfg_cpy)
-    elif dataset_name == "clothing1M":
-        num_classes = cfg_cpy.pop("num_classes")
-        dataset = Clothing1M(**cfg_cpy)
     elif dataset_name == "kmnist":
         num_classes = cfg_cpy.pop("num_classes")
         dataset = KMNIST(**cfg_cpy)

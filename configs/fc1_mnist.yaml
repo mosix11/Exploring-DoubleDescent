@@ -1,8 +1,0 @@
-global_seed: 11
-training_seed: &training_seed 11
-dataset_seed: &dataset_seed 11
-
-noise_config:
-  noise_rate: 0.4
-  noise_type: 'symmetric'
-  seed: 8

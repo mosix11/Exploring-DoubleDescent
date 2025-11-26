@@ -1,0 +1,83 @@
+global_seed: &global_seed 11
+
+# Belkin weight reuse is reusing the final weights of the previous model capacity up until the `interpolation_ths`
+# + initializing the first model with `init_xavier_uniform` and models after `interpolation_ths` with `init_normal` using `mean=0.0, std=0.1`
+experiment_type: 'belkin_weigth_reuse'
+
+
+# noise_config:
+#   noise_rate: 0.0
+#   noise_type: 'symmetric'
+#   seed: 8
+
+
+dataset:
+  name: "mnist"
+  num_classes: &num_classes 10
+  img_size: [28, 28]
+  batch_size: 256
+  subsample_size: [4000, 1000] # first item is the size of train split subsample and the second is for test set
+  normalize_imgs: False
+  flatten: True
+  valset_ratio: 0.0
+  num_workers: 8
+  seed: *global_seed
+
+model:
+  type: 'fc1'
+  input_dim: 784
+  hidden_dims: [
+        3,
+        4,
+        7,
+        9,
+        10,
+        20,
+        30,
+        40,
+        45,
+        47,
+        49,
+        50,
+        51,
+        53,
+        55,
+        60,
+        70,
+        80,
+        90,
+        100,
+        110,
+        128,
+        150,
+        170,
+        196
+    ]
+  output_dim: *num_classes
+  interpolation_ths: 50
+  loss_fn:
+    type: 'MSE'
+  metrics: ['ACC']
+
+
+
+
+trainer:
+  max_epochs: 6000
+  optimizer_cfg: 
+    type: "sgd"
+    lr: 1.0e-2
+    momentum: 0.95
+  lr_schedule_cfg:
+    type: 'step'
+    milestones: [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500]
+    gamma: 0.9
+  early_stopping: False
+  validation_freq: -1
+  save_best_model: True
+  checkpoint_freq: -1
+  run_on_gpu: True
+  use_amp: True
+  log_comet: True
+  comet_project_name: 'double-descent-fc1-mnist-belkin-seed-11'
+  seed: *global_seed
