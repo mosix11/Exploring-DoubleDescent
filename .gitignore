@@ -24,6 +24,17 @@ temp.py
 notes.txt
 testdir
 
+# Project specific files #
+###################
+fc_width_depth_confs.pkl
+find_conf.py
+compare_clean_noise_loss.py
+plot_comp_wr.py
+plot_model_wise_compare.py
+plot_model_wise.py
+width_depth_comp.py
+width_depth_plot.py
+
 # Compiled source #
 ###################
 *.com
