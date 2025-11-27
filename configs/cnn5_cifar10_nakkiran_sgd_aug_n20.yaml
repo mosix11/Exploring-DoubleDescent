@@ -71,7 +71,7 @@ trainer:
     type: 'isqrt'
     L: 512
   early_stopping: False
-  validation_freq: 1
+  validation_freq: 500
   save_best_model: True
   checkpoint_freq: -1
   run_on_gpu: True
