@@ -101,7 +101,7 @@ def train(outputs_dir:Path, cfg:dict):
     dataset_cfg = cfg["dataset"]
     dataset_cfg = parse_augmentations(dataset_cfg)
     model_cfg_list, interpolation_idx = parse_model_configs(model_cfg = cfg["model"])
-    dataset, num_classes = dataset_factory.create_dataset(cfg['dataset'])
+    dataset, num_classes = dataset_factory.create_dataset(dataset_cfg)
     # This is to save the best model in each capacity.
     dataset.set_valset(dataset.get_testset(), shuffle=False)
     
@@ -155,7 +155,9 @@ def train_parallel(outputs_dir:Path, cfg:dict, cpe:float, gpe:float):
     dataset_cfg = parse_augmentations(dataset_cfg)
     model_cfg_list, _ = parse_model_configs(model_cfg = cfg["model"])
     
-
+    # Just for downloading the dataset on one node
+    # in case it is not downloaded earlier.
+    dataset_factory.create_dataset(copy.deepcopy(dataset_cfg))
     
         
         

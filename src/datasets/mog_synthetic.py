@@ -7,7 +7,7 @@ import random
 import numpy as np
 import json
 import hashlib
-
+import pickle
 
 class MoGSyntheticDataset(Dataset):
     """
@@ -28,7 +28,6 @@ class MoGSyntheticDataset(Dataset):
         covariance_type: Literal['isotropic', 'diagonal', 'full'] = 'isotropic',
         class_sep: float = 1.0,
         intra_class_spread: float = 0.5,
-        # label_noise: float = 0.0,
         random_state: Optional[Union[int, torch.Generator]] = None,
         dtype: torch.dtype = torch.float32
     ):
@@ -49,7 +48,6 @@ class MoGSyntheticDataset(Dataset):
                 'full': Random positive semi-definite matrix, scaled by base_cluster_std.
             intra_class_spread (float): Factor scaling spread of cluster means
                                        within the same class around the class centroid.
-            label_noise (float): Fraction of labels to randomly flip (0.0 to 1.0).
             random_state (int or torch.Generator): Seed or generator for reproducibility.
             dtype (torch.dtype): Data type for the feature tensor X.
         """
@@ -282,18 +280,9 @@ class MoGSynthetic(BaseClassificationDataset):
         self.intra_class_spread = intra_class_spread
         self.testset_ratio = testset_ratio
         
-        
-        # self.generator = None
-        # if seed:
-        #     self.seed = seed
-        #     random.seed(seed)
-        #     np.random.seed(seed)
-        #     torch.manual_seed(seed)
-        #     torch.cuda.manual_seed_all(seed)
-        #     self.generator = torch.Generator()
-        #     self.generator.manual_seed(self.seed)
-        
-        
+
+        if 'augmentations' in kwargs:
+            kwargs.pop('augmentations')
         super().__init__(
             dataset_name='MoGSynthetic',
             dataset_dir=dataset_dir,
@@ -344,11 +333,13 @@ class MoGSynthetic(BaseClassificationDataset):
         # Generate unique identifier
         param_str = json.dumps(param_dict, sort_keys=True)
         self.identifier = hashlib.md5(param_str.encode()).hexdigest()
-        self.dataset_path = self.dataset_dir / f"{self.identifier}.pt"
+        self.dataset_path = self.dataset_dir / f"{self.identifier}.pkl"
         
         if self.dataset_path.exists():
             print(f"Loading existing dataset from {self.dataset_path}")
-            self.full_dataset = torch.load(self.dataset_path, weights_only=False)
+            with open(self.dataset_path, 'rb') as df:
+                self.full_dataset = pickle.load(df)
+            # self.full_dataset = torch.load(self.dataset_path, weights_only=False)
         else:
             print(f"Generating new dataset (ID: {self.identifier})")
             if isinstance(self.clusters_per_class, str) and self.clusters_per_class == 'random':
@@ -372,7 +363,9 @@ class MoGSynthetic(BaseClassificationDataset):
                 intra_class_spread=self.intra_class_spread,
                 random_state=self.generator,
             )
-            torch.save(self.full_dataset, self.dataset_path)
+            with open(self.dataset_path, 'wb') as df:
+                pickle.dump(self.full_dataset, df)
+            # torch.save(self.full_dataset, self.dataset_path)
             print(f"Saved dataset to {self.dataset_path}")
     
 
