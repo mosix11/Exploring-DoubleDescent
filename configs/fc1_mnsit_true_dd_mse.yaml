@@ -1,0 +1,56 @@
+global_seed: &global_seed 11
+
+# Belkin experiments on the FC1 is flawed. But double descent happens in the same model dataset configuration
+# at a much higher capacity. This config is intended to show this.
+weight_reuse: False
+
+
+dataset:
+  name: "mnist"
+  num_classes: &num_classes 10
+  img_size: [28, 28]
+  batch_size: 256
+  subsample_size: [4000, 1000] # first item is the size of train split subsample and the second is for test set
+  normalize_imgs: False
+  flatten: True
+  valset_ratio: 0.0
+  num_workers: 8
+  seed: *global_seed
+
+model:
+  type: 'fc1'
+  input_dim: 784
+  hidden_dims: [2,   4,   6,   8,  10,  12,  14,  16,  18,  20,  22,  24,
+        26,  28,  30,  32,  34,  36,  38,  40,  42,  44,  46,  48,  50,
+        52,  54,  56,  58,  60,  62,  64,  66,  68,  70,  72,  74,  76,
+        78,  80,  82,  86,  90,  94,  98, 104, 110, 116, 122, 128,
+        140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 
+        300, 360, 420, 500, 600, 700, 800, 900, 1000, 1100,
+        1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000,
+        3200, 3400, 3600, 3800, 4000, 4400, 4800, 5200, 5600, 6000,
+        7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000
+        ]
+  output_dim: *num_classes
+  loss_fn:
+    type: 'MSE'
+  metrics: ['ACC']
+
+
+
+
+trainer:
+  max_epochs: 2000
+  optimizer_cfg: 
+    type: "adam"
+    lr: 1.0e-4
+    betas: [0.9, 0.999]
+  lr_schedule_cfg: null
+  early_stopping: False
+  validation_freq: 1
+  save_best_model: True
+  checkpoint_freq: -1
+  run_on_gpu: True
+  use_amp: True
+  log_comet: True
+  comet_project_name: 'double-descent-fc1-mnist-true-dd-mse-seed-11'
+  seed: *global_seed

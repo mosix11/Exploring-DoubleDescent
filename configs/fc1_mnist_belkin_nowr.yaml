@@ -1,9 +1,7 @@
 global_seed: &global_seed 11
 
-# https://arxiv.org/pdf/1812.11118
-# Belkin weight reuse is reusing the final weights of the previous model capacity up until the `interpolation_ths`
-# + initializing the first model with `init_xavier_uniform` and models after `interpolation_ths` with `init_normal` using `mean=0.0, std=0.1`
-weight_reuse: True
+# This is the same configuration as `fc1_mnist_belkin` but without weight reuse, to see the effect of weight reuse
+weight_reuse: False
 
 
 
@@ -50,7 +48,6 @@ model:
         196
     ]
   output_dim: *num_classes
-  interpolation_ths: 50
   loss_fn:
     type: 'MSE'
   metrics: ['ACC']
@@ -75,5 +72,5 @@ trainer:
   run_on_gpu: True
   use_amp: True
   log_comet: True
-  comet_project_name: 'double-descent-fc1-mnist-belkin-seed-11'
+  comet_project_name: 'double-descent-fc1-mnist-belkin-nowr-seed-11'
   seed: *global_seed

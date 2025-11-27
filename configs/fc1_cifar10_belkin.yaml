@@ -6,14 +6,21 @@ global_seed: &global_seed 11
 weight_reuse: True
 
 
+# noise_config:
+#   noise_rate: 0.0
+#   noise_type: 'symmetric'
+#   seed: 8
+
 
 dataset:
-  name: "mnist"
+  name: "cifar10"
   num_classes: &num_classes 10
-  img_size: [28, 28]
-  batch_size: 256
-  subsample_size: [4000, 1000] # first item is the size of train split subsample and the second is for test set
+  img_size: [8, 8]
+  batch_size: 512
+  class_subset: [3, 5] # dog and cat
+  subsample_size: [960, 500] # first item is the size of train split subsample and the second is for test set
   normalize_imgs: False
+  grayscale: True
   flatten: True
   valset_ratio: 0.0
   num_workers: 8
@@ -21,36 +28,35 @@ dataset:
 
 model:
   type: 'fc1'
-  input_dim: 784
+  input_dim: 64
   hidden_dims: [
-        3,
+        2,
         4,
-        7,
-        9,
-        10,
+        8,
+        12,
+        16,
         20,
+        24,
+        28,
+        29,
         30,
-        40,
-        45,
-        47,
-        49,
-        50,
-        51,
-        53,
-        55,
-        60,
-        70,
-        80,
-        90,
-        100,
-        110,
+        31,
+        32,
+        33,
+        34,
+        38,
+        48,
+        64,
+        96,
         128,
-        150,
-        170,
-        196
+        256,
+        384,
+        512,
+        1024,
+        2048,
     ]
   output_dim: *num_classes
-  interpolation_ths: 50
+  interpolation_ths: 30
   loss_fn:
     type: 'MSE'
   metrics: ['ACC']
@@ -75,5 +81,5 @@ trainer:
   run_on_gpu: True
   use_amp: True
   log_comet: True
-  comet_project_name: 'double-descent-fc1-mnist-belkin-seed-11'
+  comet_project_name: 'double-descent-fc1-cifar10-belkin-seed-11'
   seed: *global_seed

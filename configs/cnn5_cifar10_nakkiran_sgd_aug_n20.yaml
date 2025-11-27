@@ -1,0 +1,81 @@
+global_seed: &global_seed 11
+
+# https://arxiv.org/pdf/1912.02292
+
+weight_reuse: False
+
+
+noise_config:
+  noise_rate: 0.2
+  noise_type: 'symmetric'
+  seed: 8
+
+
+dataset:
+  name: "cifar10"
+  num_classes: &num_classes 10
+  img_size: [32, 32]
+  batch_size: 128
+  augmentations: ['rnd_crop', 'rnd_horizontal_flip']
+  normalize_imgs: False
+  flatten: False
+  valset_ratio: 0.0
+  num_workers: 8
+  seed: *global_seed
+
+model:
+  type: 'cnn5'
+  num_channels: [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        24,
+        28,
+        32,
+        38,
+        48,
+        64
+    ]
+  num_classes: *num_classes
+  loss_fn:
+    type: 'CE'
+  metrics: ['ACC']
+
+
+
+
+trainer:
+  max_iterations: 500000
+  optimizer_cfg: 
+    type: "sgd"
+    lr: 1.0e-2
+    momentum: 0.0
+  lr_schedule_cfg:
+    type: 'isqrt'
+    L: 512
+  early_stopping: False
+  validation_freq: 1
+  save_best_model: True
+  checkpoint_freq: -1
+  run_on_gpu: True
+  use_amp: True
+  log_comet: True
+  comet_project_name: 'double-descent-cnn5-cifar10-nakkiran-sgd-aug-n20-seed-11'
+  seed: *global_seed

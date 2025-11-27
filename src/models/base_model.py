@@ -60,8 +60,10 @@ class BaseModel(nn.Module, ABC):
         """Performs a single training step."""
         with autocast('cuda', enabled=use_amp):
             preds = self(x) 
-            loss = self.loss_fn(preds, y)
-            
+            if isinstance(self.loss_fn, (torch.nn.MSELoss)):
+                y_one_hot = F.one_hot(y, num_classes=self.output_dim).float()
+                loss = self.loss_fn(preds, y_one_hot)
+            else: loss = self.loss_fn(preds, y)
         if self.metrics:
             for name, metric in self.metrics.items():
                 metric.update(preds.detach(), y.detach()) 
@@ -78,7 +80,10 @@ class BaseModel(nn.Module, ABC):
         
         with autocast('cuda', enabled=use_amp):
             preds = self(x)
-            loss = self.loss_fn(preds, y)
+            if isinstance(self.loss_fn, (torch.nn.MSELoss)):
+                y_one_hot = F.one_hot(y, num_classes=self.output_dim).float()
+                loss = self.loss_fn(preds, y_one_hot)
+            else: loss = self.loss_fn(preds, y)
 
         if self.metrics:
             for name, metric in self.metrics.items():

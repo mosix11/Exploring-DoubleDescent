@@ -494,6 +494,7 @@ class BaseClassificationTrainer(ABC):
             # Validation on step frequency
             if self._should_validate_now():
                 val_stats = self.evaluate(set='Val')
+                
                 self._check_update_best_and_save(val_stats, train_snapshot)
 
             # Checkpoint on step frequency
@@ -560,6 +561,7 @@ class BaseClassificationTrainer(ABC):
         
         if dataloader == None or len(dataloader) == 0:
             raise ValueError(f'The {set} set chosen for validation steps is empty.')
+        
         
         metrics = self._evaluate_set(dataloader)
         
