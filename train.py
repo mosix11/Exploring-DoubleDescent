@@ -149,7 +149,7 @@ def train(outputs_dir:Path, cfg:dict):
     
 
 def train_parallel(outputs_dir:Path, cfg:dict, cpe:float, gpe:float):
-    comet_api_key = os.getenv("COMET_API_KEY")
+    cfg['trainer']['comet_api_key'] = os.getenv("COMET_API_KEY")
     
     dataset_cfg = cfg["dataset"]
     dataset_cfg = parse_augmentations(dataset_cfg)
@@ -169,7 +169,6 @@ def train_parallel(outputs_dir:Path, cfg:dict, cpe:float, gpe:float):
 
         experiment_name = model.get_identifier()
         
-        config['trainer_cfg'] = comet_api_key
         trainer = StandardTrainer(
             outputs_dir=outputs_dir,
             **config['trainer_cfg'],
@@ -183,8 +182,8 @@ def train_parallel(outputs_dir:Path, cfg:dict, cpe:float, gpe:float):
         
     configs = {
         'model_cfg': tune.grid_search(model_cfg_list),
-        'dataset_cfg': dataset_cfg,
-        'trainer_cfg': cfg['trainer']
+        'dataset_cfg': copy.deepcopy(dataset_cfg),
+        'trainer_cfg': copy.deepcopy(cfg['trainer']),
     }
     if 'noise_config' in cfg: configs['noise_cfg'] = cfg['noise_config']
         
